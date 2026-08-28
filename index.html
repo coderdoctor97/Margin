@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Turn your own documents into private, focused typing practice.">
+    <meta name="theme-color" content="#f5f1e8">
+    <title>Margin - document typing practice</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="/src/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="app-header" aria-label="Application header">
+      <button class="wordmark" id="homeButton" type="button" aria-label="Margin home">
+        <span class="wordmark-mark" aria-hidden="true">M</span>
+        <span>Margin</span>
+      </button>
+
+      <nav class="stage-nav" aria-label="Practice stages">
+        <span class="stage-step is-current" data-stage-marker="import"><b>1</b> Import</span>
+        <span class="stage-line" aria-hidden="true"></span>
+        <span class="stage-step" data-stage-marker="read"><b>2</b> Select</span>
+        <span class="stage-line" aria-hidden="true"></span>
+        <span class="stage-step" data-stage-marker="type"><b>3</b> Type</span>
+      </nav>
+
+      <div class="header-actions">
+        <button class="text-button" id="openLibraryButton" type="button">
+          Mistakes <span class="count-badge" id="mistakeBadge" aria-label="0 saved mistake words">0</span>
+        </button>
+        <div class="sound-menu" id="soundMenu">
+          <button class="icon-button" id="soundToggle" type="button" aria-pressed="true" aria-label="Turn key sound off">
+            <span class="sound-glyph" aria-hidden="true"></span>
+          </button>
+          <label class="volume-label" for="volumeRange">Key sound volume</label>
+          <input id="volumeRange" class="volume-range" type="range" min="0" max="100" value="28">
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="stage-panel import-stage is-active" id="importStage" aria-labelledby="importTitle">
+        <div class="import-composition">
+          <div class="import-copy motion-rise">
+            <p class="kicker">Your words. Your rhythm.</p>
+            <h1 id="importTitle" class="brand-title">Margin</h1>
+            <p class="hero-line">Practice typing with writing you actually want to read.</p>
+            <p class="hero-support">Import a document, choose any passage, and build a private practice routine around the words that slow you down.</p>
+          </div>
+
+          <div class="upload-panel motion-rise motion-delay">
+            <input id="fileInput" class="visually-hidden" type="file" accept=".txt,.md,.docx,.doc,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword">
+            <label class="drop-zone" id="dropZone" for="fileInput" tabindex="0">
+              <span class="document-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="drop-title">Drop a document here</span>
+              <span class="drop-divider">or</span>
+              <span class="button button-primary">Choose a file</span>
+              <span class="drop-help">TXT, Markdown, or DOCX up to 25 MB</span>
+            </label>
+
+            <div class="parse-status" id="parseStatus" hidden aria-live="polite">
+              <span class="status-spinner" id="parseSpinner" aria-hidden="true"></span>
+              <div>
+                <strong id="parseStatusTitle">Reading your document</strong>
+                <p id="parseStatusMessage">Keeping everything on this device.</p>
+              </div>
+            </div>
+
+            <div class="privacy-note">
+              <span class="privacy-lock" aria-hidden="true"></span>
+              <p><strong>Private by design.</strong> Documents are parsed in this browser and are never uploaded or saved. Only your mistake-word history is stored locally.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="stage-panel read-stage" id="readStage" aria-labelledby="readTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="kicker">Read and select</p>
+            <h1 id="readTitle">Choose your passage</h1>
+            <p>Select text directly in the document, or practice everything.</p>
+          </div>
+          <button class="text-button subtle" id="replaceDocumentButton" type="button">Choose another document</button>
+        </div>
+
+        <div class="document-meta" aria-label="Imported document details">
+          <span class="file-type" id="fileType">TXT</span>
+          <div class="file-identity">
+            <strong id="fileName">Document.txt</strong>
+            <span id="fileStats">0 words · 0 characters</span>
+          </div>
+          <span class="success-label"><i aria-hidden="true"></i> Ready</span>
+        </div>
+
+        <article class="document-preview" id="documentPreview" aria-label="Document preview; select text here" tabindex="0"></article>
+
+        <aside class="selection-bar" aria-label="Practice selection controls">
+          <div class="selection-summary" id="selectionSummary" aria-live="polite">
+            <span class="selection-dot" aria-hidden="true"></span>
+            <div><strong>No text selected</strong><span>Drag across any text in the preview</span></div>
+          </div>
+          <div class="selection-actions">
+            <button class="button button-secondary" id="practiceAllButton" type="button">Practice entire document</button>
+            <button class="button button-primary" id="practiceSelectionButton" type="button" disabled>Practice selection</button>
+          </div>
+        </aside>
+        <p class="advisory" id="lengthAdvisory" hidden></p>
+      </section>
+
+      <section class="stage-panel type-stage" id="typeStage" aria-labelledby="typeTitle" hidden>
+        <div class="typing-topbar">
+          <div>
+            <p class="kicker" id="sessionKicker">Typing session</p>
+            <h1 id="typeTitle">Find your rhythm</h1>
+          </div>
+          <button class="text-button subtle" id="backToDocumentButton" type="button">Back to document</button>
+        </div>
+
+        <div class="live-stats" aria-label="Live typing statistics">
+          <div><span>Progress</span><strong id="progressValue">0%</strong></div>
+          <div><span>Time</span><strong id="timeValue">0:00</strong></div>
+          <div><span>WPM</span><strong id="wpmValue">0</strong></div>
+          <div><span>Accuracy</span><strong id="accuracyValue">100%</strong></div>
+        </div>
+        <div class="progress-track" role="progressbar" aria-label="Typing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progressBar"></span></div>
+
+        <div class="typing-shell">
+          <div class="session-overlay" id="sessionOverlay">
+            <span class="eyebrow" id="overlayEyebrow">Ready when you are</span>
+            <strong id="overlayTitle">Start with one deliberate keystroke.</strong>
+            <p id="overlayMessage">The timer begins only after you type the first character.</p>
+            <button class="button button-primary" id="overlayActionButton" type="button">Start session</button>
+          </div>
+          <div class="typing-passage" id="typingPassage" tabindex="0" role="textbox" aria-readonly="true" aria-multiline="true" aria-label="Typing passage. Press Start, then type the highlighted text." aria-describedby="typingHint"></div>
+        </div>
+
+        <p class="typing-hint" id="typingHint"><kbd>Backspace</kbd> to revisit a character <span aria-hidden="true">·</span> Paste is disabled during practice</p>
+        <div class="session-controls" aria-label="Session controls">
+          <button class="button button-primary" id="startPauseButton" type="button">Start</button>
+          <button class="button button-secondary" id="restartButton" type="button">Restart</button>
+          <button class="text-button danger" id="endSessionButton" type="button">End session</button>
+        </div>
+
+        <section class="results" id="resultsPanel" aria-labelledby="resultsTitle" hidden>
+          <p class="kicker" id="resultsKicker">Session complete</p>
+          <h2 id="resultsTitle">A little smoother than before.</h2>
+          <p id="resultsLead">Your finished session is summarized below.</p>
+          <div class="result-grid">
+            <div><strong id="resultWpm">0</strong><span>WPM</span></div>
+            <div><strong id="resultAccuracy">100%</strong><span>Accuracy</span></div>
+            <div><strong id="resultTime">0:00</strong><span>Elapsed</span></div>
+            <div><strong id="resultErrors">0</strong><span>Errors</span></div>
+          </div>
+          <div class="missed-words" id="missedWords"></div>
+          <div class="result-actions">
+            <button class="button button-primary" id="tryAgainButton" type="button">Try this passage again</button>
+            <button class="button button-secondary" id="resultLibraryButton" type="button">Review mistakes</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <dialog class="library-dialog" id="libraryDialog" aria-labelledby="libraryTitle">
+      <div class="dialog-header">
+        <div>
+          <p class="kicker">Personal review</p>
+          <h1 id="libraryTitle">Mistake Library</h1>
+          <p>Words stay on this device until you remove them.</p>
+        </div>
+        <button class="close-button" id="closeLibraryButton" type="button" aria-label="Close mistake library">Close</button>
+      </div>
+
+      <div class="library-toolbar">
+        <label class="select-all"><input type="checkbox" id="selectAllMistakes"> Select all</label>
+        <div>
+          <button class="button button-primary button-small" id="practiceMistakesButton" type="button" disabled>Practice mistakes</button>
+          <button class="text-button" id="exportMistakesButton" type="button">Export JSON</button>
+          <label class="text-button file-label" for="importMistakesInput">Import JSON</label>
+          <input class="visually-hidden" id="importMistakesInput" type="file" accept="application/json,.json">
+        </div>
+      </div>
+
+      <div class="library-empty" id="libraryEmpty">
+        <span class="empty-rings" aria-hidden="true"></span>
+        <h2>No saved words yet</h2>
+        <p>Words you miss during a session will collect here for focused practice.</p>
+      </div>
+      <div class="mistake-list" id="mistakeList" aria-live="polite"></div>
+      <div class="library-footer">
+        <span id="libraryCount">0 saved words</span>
+        <button class="text-button danger" id="clearHistoryButton" type="button" disabled>Clear history</button>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="confirmDialog" aria-labelledby="confirmTitle">
+      <h2 id="confirmTitle">Are you sure?</h2>
+      <p id="confirmMessage"></p>
+      <div>
+        <button class="button button-secondary" id="confirmCancel" type="button">Cancel</button>
+        <button class="button button-danger" id="confirmAccept" type="button">Continue</button>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+    <div class="visually-hidden" id="sessionAnnouncements" aria-live="assertive" aria-atomic="true"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,4 @@
+The first paragraph keeps its words.
+It also keeps this line break.
+
+The second paragraph includes café and can't.
