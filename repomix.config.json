@@ -1,0 +1,57 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "header": {
+      "text": "Project: Margin\nGenerated for AI agent context ingestion.\nType: Vanilla JS + Vite typing practice app.\nUse this file to understand architecture before making changes."
+    }
+  },
+  "include": [
+    "index.html",
+    "package.json",
+    "vite.config.js",
+    "README.md",
+    "src/**/*.js",
+    "src/**/*.css",
+    "tests/**/*.js",
+    "tests/setup.js"
+  ],
+  "exclude": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      "coverage/**",
+      ".git/**",
+      "package-lock.json",
+      "pnpm-lock.yaml",
+      "yarn.lock",
+      "*.log",
+      ".env*",
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.gif",
+      "*.svg",
+      "*.ico",
+      "*.woff",
+      "*.woff2",
+      "*.ttf",
+      "*.eot",
+      "*.mp3",
+      "*.mp4",
+      "*.webm",
+      "public/assets/audio/*.json",
+      "tests/fixtures/sample.md",
+      "public/assets/audio/README.md"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  },
+  "tokenCount": {
+    "encoding": "cl100k_base"
+  }
+}

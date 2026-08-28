@@ -122,7 +122,7 @@ function showStage(stage) {
     if (index === activeIndex) marker.setAttribute('aria-current', 'step');
     else marker.removeAttribute('aria-current');
   });
-  window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+  // Remove the window.scrollTo call — CSS .stage-panel transition handles the crossfade.
 }
 
 function announce(message) {

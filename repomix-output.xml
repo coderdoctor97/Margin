@@ -1,0 +1,2698 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: index.html, package.json, vite.config.js, README.md, src/**/*.js, src/**/*.css, tests/**/*.js, tests/setup.js
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  audio/
+    keyboard-audio.js
+  core/
+    statistics.js
+    text.js
+    typing-session.js
+  parsers/
+    document-parser.js
+  security/
+    sanitizer.js
+  storage/
+    mistake-store.js
+  main.js
+  styles.css
+tests/
+  fixtures/
+    docx-fixture.js
+  document-parser.test.js
+  keyboard-audio.test.js
+  mistake-store.test.js
+  sanitizer.test.js
+  setup.js
+  text.test.js
+  typing-session.test.js
+index.html
+package.json
+README.md
+vite.config.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/audio/keyboard-audio.js">
+const SOUND_STORAGE_KEY = 'margin.sound';
+const DEFAULT_PREFERENCES = Object.freeze({ enabled: true, volume: 0.28 });
+
+export function loadSoundPreferences(storage = globalThis.localStorage) {
+  try {
+    const value = JSON.parse(storage.getItem(SOUND_STORAGE_KEY));
+    return {
+      enabled: typeof value?.enabled === 'boolean' ? value.enabled : DEFAULT_PREFERENCES.enabled,
+      volume: Number.isFinite(value?.volume) ? Math.min(1, Math.max(0, value.volume)) : DEFAULT_PREFERENCES.volume,
+    };
+  } catch {
+    return { ...DEFAULT_PREFERENCES };
+  }
+}
+
+export function saveSoundPreferences(preferences, storage = globalThis.localStorage) {
+  const safe = {
+    enabled: Boolean(preferences.enabled),
+    volume: Math.min(1, Math.max(0, Number(preferences.volume) || 0)),
+  };
+  try {
+    storage.setItem(SOUND_STORAGE_KEY, JSON.stringify(safe));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export class KeyboardAudio {
+  constructor({
+    storage = globalThis.localStorage,
+    contextFactory = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)(),
+    assetLoader = () => fetch('/assets/audio/key-click.pcm.json').then((response) => {
+      if (!response.ok) throw new Error('Sound asset unavailable');
+      return response.json();
+    }),
+  } = {}) {
+    this.storage = storage;
+    this.contextFactory = contextFactory;
+    this.assetLoader = assetLoader;
+    this.preferences = loadSoundPreferences(storage);
+    this.context = null;
+    this.buffer = null;
+    this.asset = null;
+    this.unlocked = false;
+    this.activeSources = [];
+    this.preloadPromise = null;
+  }
+
+  preload() {
+    if (!this.preloadPromise) {
+      this.preloadPromise = this.assetLoader().then((asset) => {
+        if (!asset || !Array.isArray(asset.samples) || !Number.isFinite(asset.sampleRate)) {
+          throw new Error('Invalid sound asset');
+        }
+        this.asset = asset;
+        return asset;
+      }).catch(() => null);
+    }
+    return this.preloadPromise;
+  }
+
+  async unlock() {
+    if (this.unlocked) return true;
+    const asset = await this.preload();
+    if (!asset) return false;
+    try {
+      this.context ||= this.contextFactory();
+      if (this.context.state === 'suspended') await this.context.resume();
+      this.buffer = this.context.createBuffer(1, asset.samples.length, asset.sampleRate);
+      const channel = this.buffer.getChannelData(0);
+      asset.samples.forEach((sample, index) => { channel[index] = Math.max(-1, Math.min(1, sample / 127)); });
+      this.unlocked = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  setEnabled(enabled) {
+    this.preferences.enabled = Boolean(enabled);
+    saveSoundPreferences(this.preferences, this.storage);
+  }
+
+  setVolume(volume) {
+    this.preferences.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+    saveSoundPreferences(this.preferences, this.storage);
+  }
+
+  play() {
+    if (!this.preferences.enabled || !this.unlocked || !this.buffer || this.context?.state !== 'running') return false;
+    while (this.activeSources.length >= 6) this.activeSources.shift()?.stop();
+    const source = this.context.createBufferSource();
+    const gain = this.context.createGain();
+    source.buffer = this.buffer;
+    gain.gain.value = this.preferences.volume;
+    source.connect(gain);
+    gain.connect(this.context.destination);
+    this.activeSources.push(source);
+    source.onended = () => {
+      this.activeSources = this.activeSources.filter((active) => active !== source);
+    };
+    source.start();
+    return true;
+  }
+
+  destroy() {
+    this.activeSources.forEach((source) => source.stop());
+    this.activeSources = [];
+    this.context?.close?.();
+    this.context = null;
+    this.buffer = null;
+    this.unlocked = false;
+  }
+}
+</file>
+
+<file path="src/core/statistics.js">
+export function calculateStatistics({
+  correctKeystrokes = 0,
+  evaluatedKeystrokes = 0,
+  cursor = 0,
+  totalCharacters = 0,
+  elapsedMs = 0,
+} = {}) {
+  const safeElapsed = Math.max(0, Number(elapsedMs) || 0);
+  const elapsedMinutes = safeElapsed / 60000;
+  const wpm = elapsedMinutes > 0 ? (correctKeystrokes / 5) / elapsedMinutes : 0;
+  const accuracy = evaluatedKeystrokes > 0
+    ? (correctKeystrokes / evaluatedKeystrokes) * 100
+    : 100;
+  const progress = totalCharacters > 0
+    ? Math.min(100, (Math.max(0, cursor) / totalCharacters) * 100)
+    : 0;
+
+  return {
+    wpm: Number.isFinite(wpm) ? wpm : 0,
+    accuracy: Number.isFinite(accuracy) ? accuracy : 100,
+    progress: Number.isFinite(progress) ? progress : 0,
+    elapsedMs: safeElapsed,
+  };
+}
+
+export function formatElapsed(elapsedMs) {
+  const totalSeconds = Math.floor(Math.max(0, elapsedMs) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+</file>
+
+<file path="src/core/text.js">
+const BLOCK_TAGS = new Set([
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'DT', 'DD', 'FIGCAPTION',
+  'FIGURE', 'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'LI', 'MAIN',
+  'NAV', 'OL', 'P', 'PRE', 'SECTION', 'TABLE', 'TBODY', 'THEAD', 'TFOOT', 'TR', 'UL',
+]);
+const DOUBLE_BREAK_TAGS = new Set([
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIGCAPTION', 'FIGURE',
+  'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'PRE', 'SECTION', 'TABLE',
+]);
+const WORD_PATTERN = /[\p{L}\p{N}\p{M}]+(?:['’][\p{L}\p{N}\p{M}]+|[-‐‑‒–—][\p{L}\p{N}\p{M}]+)*/gu;
+
+export function toCharacters(text) {
+  return Array.from(String(text ?? ''));
+}
+
+export function countCharacters(text) {
+  return toCharacters(text).length;
+}
+
+export function countWords(text) {
+  return Array.from(String(text ?? '').matchAll(WORD_PATTERN)).length;
+}
+
+export function cleanPracticeText(text, { trim = true } = {}) {
+  let clean = String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '');
+  if (trim) clean = clean.replace(/^\s+|\s+$/gu, '');
+  return clean;
+}
+
+function appendBreak(parts, amount) {
+  let existing = 0;
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const value = parts[index];
+    const trailing = value.match(/\n+$/)?.[0].length || 0;
+    existing += trailing;
+    if (trailing !== value.length) break;
+  }
+  if (existing < amount) parts.push('\n'.repeat(amount - existing));
+}
+
+function appendNodeText(node, parts, inPre = false) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const value = node.nodeValue || '';
+    if (!inPre && /^\s*\n\s*$/.test(value)) return;
+    parts.push(value);
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
+
+  const tag = node.nodeType === Node.ELEMENT_NODE ? node.tagName : '';
+  if (tag === 'BR') {
+    appendBreak(parts, 1);
+    return;
+  }
+  if (tag === 'IMG') return;
+
+  const isBlock = BLOCK_TAGS.has(tag);
+  const breakSize = DOUBLE_BREAK_TAGS.has(tag) ? 2 : 1;
+  if (isBlock && parts.length) appendBreak(parts, breakSize);
+
+  Array.from(node.childNodes).forEach((child, index, children) => {
+    appendNodeText(child, parts, inPre || tag === 'PRE');
+    if (tag === 'TR' && ['TD', 'TH'].includes(child.tagName) && index < children.length - 1) parts.push('\t');
+  });
+
+  if (isBlock) appendBreak(parts, breakSize);
+}
+
+export function nodeToPracticeText(node) {
+  const parts = [];
+  appendNodeText(node, parts);
+  return cleanPracticeText(parts.join(''));
+}
+
+export function extractSelectionText(selection, previewRoot) {
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return '';
+  const range = selection.getRangeAt(0);
+  const common = range.commonAncestorContainer;
+  if (common !== previewRoot && !previewRoot.contains(common)) return '';
+  return nodeToPracticeText(range.cloneContents());
+}
+
+export function findWords(text) {
+  const characters = toCharacters(text);
+  const utf16ToCharacter = new Map();
+  let utf16Index = 0;
+  characters.forEach((character, index) => {
+    for (let offset = 0; offset < character.length; offset += 1) {
+      utf16ToCharacter.set(utf16Index + offset, index);
+    }
+    utf16Index += character.length;
+  });
+  utf16ToCharacter.set(utf16Index, characters.length);
+
+  return Array.from(String(text ?? '').matchAll(WORD_PATTERN), (match) => ({
+    word: match[0],
+    start: utf16ToCharacter.get(match.index) ?? 0,
+    end: utf16ToCharacter.get(match.index + match[0].length) ?? characters.length,
+  }));
+}
+
+export function wordAtCharacter(text, characterIndex) {
+  return findWords(text).find(({ start, end }) => characterIndex >= start && characterIndex < end) || null;
+}
+
+export function contextAround(text, wordMatch, maxLength = 110) {
+  if (!wordMatch) return '';
+  const characters = toCharacters(text);
+  const radius = Math.max(15, Math.floor((maxLength - (wordMatch.end - wordMatch.start)) / 2));
+  const start = Math.max(0, wordMatch.start - radius);
+  const end = Math.min(characters.length, wordMatch.end + radius);
+  let context = characters.slice(start, end).join('').replace(/\s+/gu, ' ').trim();
+  if (start > 0) context = `...${context}`;
+  if (end < characters.length) context = `${context}...`;
+  return context;
+}
+
+export function normalizeWordKey(word) {
+  return String(word ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .replace(/[‐‑‒–—]/g, '-')
+    .trim();
+}
+
+export function isMeaningfulText(text) {
+  return /[\p{L}\p{N}\p{P}\p{S}]/u.test(String(text ?? ''));
+}
+</file>
+
+<file path="src/core/typing-session.js">
+import { calculateStatistics } from './statistics.js';
+import { toCharacters } from './text.js';
+
+const SESSION_STATES = new Set(['idle', 'running', 'paused', 'completed', 'ended']);
+
+export class TypingSession {
+  constructor(text, { now = () => performance.now() } = {}) {
+    this.now = now;
+    this.load(text);
+  }
+
+  load(text) {
+    this.source = String(text ?? '');
+    this.characters = toCharacters(this.source);
+    this.status = 'idle';
+    this.cursor = 0;
+    this.evaluations = Array(this.characters.length).fill(null);
+    this.correctKeystrokes = 0;
+    this.evaluatedKeystrokes = 0;
+    this.errorCount = 0;
+    this.started = false;
+    this.activeStartedAt = null;
+    this.accumulatedMs = 0;
+    return this.snapshot();
+  }
+
+  transition(next) {
+    if (!SESSION_STATES.has(next)) throw new Error(`Unknown session state: ${next}`);
+    this.status = next;
+  }
+
+  start() {
+    if (this.status !== 'idle') return false;
+    this.transition('running');
+    return true;
+  }
+
+  resume() {
+    if (this.status !== 'paused') return false;
+    this.transition('running');
+    if (this.started) this.activeStartedAt = this.now();
+    return true;
+  }
+
+  pause() {
+    if (this.status !== 'running') return false;
+    this.captureElapsed();
+    this.transition('paused');
+    return true;
+  }
+
+  restart() {
+    return this.load(this.source);
+  }
+
+  end() {
+    if (this.status === 'completed' || this.status === 'ended') return false;
+    this.captureElapsed();
+    this.transition('ended');
+    return true;
+  }
+
+  captureElapsed() {
+    if (this.activeStartedAt !== null) {
+      this.accumulatedMs += Math.max(0, this.now() - this.activeStartedAt);
+      this.activeStartedAt = null;
+    }
+  }
+
+  elapsedMs() {
+    if (this.activeStartedAt === null) return this.accumulatedMs;
+    return this.accumulatedMs + Math.max(0, this.now() - this.activeStartedAt);
+  }
+
+  evaluate(input) {
+    if (this.status !== 'running' || this.cursor >= this.characters.length) return null;
+    const inputCharacters = toCharacters(input);
+    if (inputCharacters.length !== 1) return null;
+
+    if (!this.started) {
+      this.started = true;
+      this.activeStartedAt = this.now();
+    }
+
+    const index = this.cursor;
+    const expected = this.characters[index];
+    const correct = inputCharacters[0] === expected;
+    this.evaluations[index] = correct ? 'correct' : 'incorrect';
+    this.cursor += 1;
+    this.evaluatedKeystrokes += 1;
+    if (correct) this.correctKeystrokes += 1;
+    else this.errorCount += 1;
+
+    if (this.cursor === this.characters.length) {
+      this.captureElapsed();
+      this.transition('completed');
+    }
+
+    return { index, expected, input: inputCharacters[0], correct, completed: this.status === 'completed' };
+  }
+
+  backspace() {
+    if (this.status !== 'running' || this.cursor === 0) return false;
+    this.cursor -= 1;
+    this.evaluations[this.cursor] = null;
+    return true;
+  }
+
+  statistics() {
+    return calculateStatistics({
+      correctKeystrokes: this.correctKeystrokes,
+      evaluatedKeystrokes: this.evaluatedKeystrokes,
+      cursor: this.cursor,
+      totalCharacters: this.characters.length,
+      elapsedMs: this.elapsedMs(),
+    });
+  }
+
+  snapshot() {
+    return {
+      source: this.source,
+      characters: [...this.characters],
+      status: this.status,
+      cursor: this.cursor,
+      evaluations: [...this.evaluations],
+      correctKeystrokes: this.correctKeystrokes,
+      evaluatedKeystrokes: this.evaluatedKeystrokes,
+      errorCount: this.errorCount,
+      started: this.started,
+      statistics: this.statistics(),
+    };
+  }
+}
+
+export function keyboardInputFromEvent(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return null;
+  if (event.key === 'Enter') return '\n';
+  if (event.key === 'Tab') return '\t';
+  return toCharacters(event.key).length === 1 ? event.key : null;
+}
+</file>
+
+<file path="src/parsers/document-parser.js">
+import mammoth from 'mammoth';
+import { marked } from 'marked';
+import { sanitizeDocumentHTML } from '../security/sanitizer.js';
+import { cleanPracticeText, countCharacters, countWords } from '../core/text.js';
+
+export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const ACCEPTED_EXTENSIONS = new Set(['txt', 'md', 'docx']);
+
+export class DocumentParseError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'DocumentParseError';
+    this.code = code;
+  }
+}
+
+export function extensionFromName(name) {
+  return String(name ?? '').split('.').pop()?.toLocaleLowerCase() || '';
+}
+
+export function validateDocumentFile(file) {
+  const extension = extensionFromName(file?.name);
+  if (extension === 'doc') {
+    throw new DocumentParseError(
+      'legacy-doc',
+      'This is a legacy Word .doc file. For safe browser-based reading, save or convert it to .docx, .md, or .txt, then try again.',
+    );
+  }
+  if (!ACCEPTED_EXTENSIONS.has(extension)) {
+    throw new DocumentParseError('unsupported', 'Choose a .txt, .md, or .docx document.');
+  }
+  if (!file || file.size === 0) {
+    throw new DocumentParseError('empty', 'This file is empty. Choose a document that contains readable text.');
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    throw new DocumentParseError('too-large', 'This file is larger than 25 MB. Choose a smaller document.');
+  }
+  return extension;
+}
+
+function decodeTextFile(buffer) {
+  try {
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    return decoded.replace(/^\uFEFF/, '');
+  } catch {
+    try {
+      return new TextDecoder('windows-1252', { fatal: true }).decode(buffer);
+    } catch {
+      throw new DocumentParseError('encoding', 'The text encoding could not be read. Save the file as UTF-8 and try again.');
+    }
+  }
+}
+
+function textToSafeHTML(text) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'plain-text';
+  wrapper.textContent = text;
+  return sanitizeDocumentHTML(wrapper.outerHTML);
+}
+
+async function parseDocx(buffer) {
+  try {
+    const result = await mammoth.convertToHtml(
+      { arrayBuffer: buffer },
+      {
+        includeEmbeddedStyleMap: false,
+        externalFileAccess: false,
+        convertImage: mammoth.images.dataUri,
+      },
+    );
+    return {
+      html: sanitizeDocumentHTML(result.value),
+      warnings: result.messages.filter(({ type }) => type === 'warning').map(({ message }) => message),
+    };
+  } catch {
+    throw new DocumentParseError('corrupt-docx', 'This .docx file could not be read. It may be damaged or password-protected. Try opening and resaving it in your word processor.');
+  }
+}
+
+export async function parseDocument(file) {
+  const extension = validateDocumentFile(file);
+  let buffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch {
+    throw new DocumentParseError('read-failed', 'The browser could not read this file. Check its permissions and try again.');
+  }
+
+  let html = '';
+  let warnings = [];
+  if (extension === 'txt') {
+    html = textToSafeHTML(decodeTextFile(buffer));
+  } else if (extension === 'md') {
+    const markdown = decodeTextFile(buffer);
+    html = sanitizeDocumentHTML(marked.parse(markdown, { gfm: true, breaks: false }));
+  } else {
+    ({ html, warnings } = await parseDocx(buffer));
+  }
+
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  const text = cleanPracticeText(container.textContent || '');
+  if (!text || countWords(text) === 0) {
+    throw new DocumentParseError('no-text', 'No readable text was found. The document may contain only images or unsupported objects.');
+  }
+
+  return {
+    name: file.name,
+    extension,
+    html,
+    warnings,
+    approximateWords: countWords(text),
+    approximateCharacters: countCharacters(text),
+  };
+}
+</file>
+
+<file path="src/security/sanitizer.js">
+import createDOMPurify from 'dompurify';
+
+function getPurifier() {
+  return typeof createDOMPurify.sanitize === 'function'
+    ? createDOMPurify
+    : createDOMPurify(globalThis.window);
+}
+
+const SANITIZE_OPTIONS = {
+  USE_PROFILES: { html: true },
+  FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed'],
+  FORBID_ATTR: ['style'],
+  ALLOW_DATA_ATTR: false,
+  ALLOW_UNKNOWN_PROTOCOLS: false,
+};
+
+export function sanitizeDocumentHTML(untrustedHTML) {
+  const purifier = getPurifier();
+  const clean = purifier.sanitize(String(untrustedHTML ?? ''), SANITIZE_OPTIONS);
+  const template = document.createElement('template');
+
+  // This HTML has already passed through DOMPurify; the second pass below
+  // covers the safe attributes added while hardening links.
+  template.innerHTML = clean;
+  template.content.querySelectorAll('a').forEach((link) => {
+    link.setAttribute('rel', 'noopener noreferrer');
+    link.setAttribute('target', '_blank');
+  });
+  template.content.querySelectorAll('img').forEach((image) => {
+    const source = image.getAttribute('src') || '';
+    if (!/^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(source)) {
+      const replacement = document.createTextNode(image.getAttribute('alt') || '');
+      image.replaceWith(replacement);
+    }
+  });
+
+  return purifier.sanitize(template.innerHTML, {
+    ...SANITIZE_OPTIONS,
+    ADD_ATTR: ['target'],
+  });
+}
+</file>
+
+<file path="src/storage/mistake-store.js">
+import { findWords, normalizeWordKey } from '../core/text.js';
+
+export const MISTAKE_STORAGE_KEY = 'margin.mistakes';
+export const MISTAKE_SCHEMA_VERSION = 2;
+
+function emptyData() {
+  return { version: MISTAKE_SCHEMA_VERSION, words: {} };
+}
+
+function safeInteger(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : fallback;
+}
+
+function safeDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function normalizeRecord(record, fallbackWord = '') {
+  const display = String(record?.display ?? record?.word ?? fallbackWord).trim().slice(0, 120);
+  const key = normalizeWordKey(display);
+  const isSingleWord = findWords(display).some(({ word }) => normalizeWordKey(word) === key);
+  if (!key || !isSingleWord) return null;
+  return {
+    key,
+    display,
+    mistakeCount: Math.max(1, safeInteger(record?.mistakeCount ?? record?.count, 1)),
+    sessionCount: Math.max(1, safeInteger(record?.sessionCount ?? record?.sessions, 1)),
+    lastPracticed: safeDate(record?.lastPracticed) || new Date(0).toISOString(),
+    context: String(record?.context ?? '').replace(/\s+/gu, ' ').trim().slice(0, 180),
+  };
+}
+
+function mergeRecord(target, incoming) {
+  if (!target) return { ...incoming };
+  const incomingIsNewer = new Date(incoming.lastPracticed) >= new Date(target.lastPracticed);
+  return {
+    ...target,
+    display: incomingIsNewer ? incoming.display : target.display,
+    mistakeCount: target.mistakeCount + incoming.mistakeCount,
+    sessionCount: target.sessionCount + incoming.sessionCount,
+    lastPracticed: incomingIsNewer ? incoming.lastPracticed : target.lastPracticed,
+    context: incomingIsNewer && incoming.context ? incoming.context : target.context,
+  };
+}
+
+export function migrateMistakeData(raw) {
+  const migrated = emptyData();
+  if (!raw || typeof raw !== 'object') return migrated;
+
+  let records = [];
+  if (raw.version === MISTAKE_SCHEMA_VERSION && raw.words && typeof raw.words === 'object' && !Array.isArray(raw.words)) {
+    records = Object.entries(raw.words).map(([key, record]) => normalizeRecord(record, key));
+  } else if (raw.version === 1 && Array.isArray(raw.words)) {
+    records = raw.words.map((record) => normalizeRecord(record));
+  } else if (Array.isArray(raw)) {
+    records = raw.map((record) => normalizeRecord(record));
+  } else {
+    return migrated;
+  }
+
+  records.filter(Boolean).forEach((record) => {
+    migrated.words[record.key] = mergeRecord(migrated.words[record.key], record);
+  });
+  return migrated;
+}
+
+export class MistakeStore {
+  constructor({ storage = globalThis.localStorage, now = () => new Date() } = {}) {
+    this.storage = storage;
+    this.now = now;
+    this.sessionWords = new Set();
+    this.data = this.load();
+  }
+
+  load() {
+    try {
+      const raw = this.storage.getItem(MISTAKE_STORAGE_KEY);
+      if (!raw) return emptyData();
+      const migrated = migrateMistakeData(JSON.parse(raw));
+      this.storage.setItem(MISTAKE_STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
+    } catch {
+      try { this.storage.removeItem(MISTAKE_STORAGE_KEY); } catch { /* Storage may be unavailable. */ }
+      return emptyData();
+    }
+  }
+
+  persist() {
+    try {
+      this.storage.setItem(MISTAKE_STORAGE_KEY, JSON.stringify(this.data));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  list() {
+    return Object.values(this.data.words)
+      .map((record) => ({ ...record }))
+      .sort((a, b) => b.mistakeCount - a.mistakeCount || new Date(b.lastPracticed) - new Date(a.lastPracticed));
+  }
+
+  recordMistake({ word, context = '', sessionId = 'unknown', at = this.now() }) {
+    const display = String(word ?? '').trim();
+    const key = normalizeWordKey(display);
+    if (!key || !findWords(display).some(({ word: found }) => normalizeWordKey(found) === key)) return null;
+    const sessionKey = `${sessionId}:${key}`;
+    const existing = this.data.words[key];
+    const isNewSession = !this.sessionWords.has(sessionKey);
+    this.sessionWords.add(sessionKey);
+    this.data.words[key] = {
+      key,
+      display: existing?.display || display,
+      mistakeCount: (existing?.mistakeCount || 0) + 1,
+      sessionCount: (existing?.sessionCount || 0) + (isNewSession ? 1 : 0),
+      lastPracticed: new Date(at).toISOString(),
+      context: String(context || existing?.context || '').replace(/\s+/gu, ' ').trim().slice(0, 180),
+    };
+    this.persist();
+    return { ...this.data.words[key] };
+  }
+
+  markPracticed(words, sessionId, at = this.now()) {
+    words.forEach((word) => {
+      const key = normalizeWordKey(word);
+      const existing = this.data.words[key];
+      if (!existing) return;
+      const sessionKey = `${sessionId}:${key}`;
+      if (!this.sessionWords.has(sessionKey)) {
+        existing.sessionCount += 1;
+        this.sessionWords.add(sessionKey);
+      }
+      existing.lastPracticed = new Date(at).toISOString();
+    });
+    this.persist();
+  }
+
+  remove(keyOrWord) {
+    const key = normalizeWordKey(keyOrWord);
+    const existed = Boolean(this.data.words[key]);
+    delete this.data.words[key];
+    this.persist();
+    return existed;
+  }
+
+  clear() {
+    this.data = emptyData();
+    this.sessionWords.clear();
+    this.persist();
+  }
+
+  exportJSON() {
+    return JSON.stringify({
+      ...this.data,
+      exportedAt: this.now().toISOString(),
+      product: 'Margin',
+    }, null, 2);
+  }
+
+  importJSON(json, { merge = true } = {}) {
+    let parsed;
+    try {
+      parsed = typeof json === 'string' ? JSON.parse(json) : json;
+    } catch {
+      throw new Error('That file is not valid JSON.');
+    }
+    const supportedShape = Array.isArray(parsed)
+      || (parsed?.version === 1 && Array.isArray(parsed.words))
+      || (parsed?.version === MISTAKE_SCHEMA_VERSION && parsed.words && typeof parsed.words === 'object' && !Array.isArray(parsed.words));
+    if (!supportedShape) throw new Error('That JSON file is not a supported Margin mistake-history export.');
+    const imported = migrateMistakeData(parsed);
+    if (Object.keys(imported.words).length === 0 && Object.keys(parsed?.words || {}).length > 0) {
+      throw new Error('No valid mistake-word records were found in that file.');
+    }
+    if (!merge) {
+      this.data = imported;
+    } else {
+      Object.values(imported.words).forEach((record) => {
+        this.data.words[record.key] = mergeRecord(this.data.words[record.key], record);
+      });
+    }
+    this.persist();
+    return this.list();
+  }
+}
+
+export function buildMistakePractice(records, maxWords = 120) {
+  const valid = records.filter(Boolean);
+  if (valid.length === 0) return '';
+  const queue = [];
+  const finiteLimit = Math.max(maxWords, valid.length);
+  valid.forEach((record) => queue.push(record.display));
+  valid
+    .slice()
+    .sort((a, b) => b.mistakeCount - a.mistakeCount)
+    .forEach((record) => {
+      const extra = Math.min(2, Math.max(0, Math.floor(record.mistakeCount / 3)));
+      for (let index = 0; index < extra && queue.length < finiteLimit; index += 1) queue.push(record.display);
+    });
+  return queue.slice(0, finiteLimit).map((word, index) => `${word}${(index + 1) % 8 === 0 ? '\n' : ' '}`).join('').trim();
+}
+</file>
+
+<file path="src/main.js">
+import { parseDocument, DocumentParseError } from './parsers/document-parser.js';
+import {
+  contextAround,
+  countCharacters,
+  countWords,
+  extractSelectionText,
+  findWords,
+  isMeaningfulText,
+  nodeToPracticeText,
+  normalizeWordKey,
+} from './core/text.js';
+import { formatElapsed } from './core/statistics.js';
+import { keyboardInputFromEvent, TypingSession } from './core/typing-session.js';
+import { buildMistakePractice, MistakeStore } from './storage/mistake-store.js';
+import { KeyboardAudio } from './audio/keyboard-audio.js';
+
+const $ = (selector) => document.querySelector(selector);
+const elements = {
+  stages: { import: $('#importStage'), read: $('#readStage'), type: $('#typeStage') },
+  stageMarkers: [...document.querySelectorAll('[data-stage-marker]')],
+  homeButton: $('#homeButton'),
+  fileInput: $('#fileInput'),
+  dropZone: $('#dropZone'),
+  parseStatus: $('#parseStatus'),
+  parseSpinner: $('#parseSpinner'),
+  parseStatusTitle: $('#parseStatusTitle'),
+  parseStatusMessage: $('#parseStatusMessage'),
+  replaceDocumentButton: $('#replaceDocumentButton'),
+  fileType: $('#fileType'),
+  fileName: $('#fileName'),
+  fileStats: $('#fileStats'),
+  documentPreview: $('#documentPreview'),
+  selectionSummary: $('#selectionSummary'),
+  lengthAdvisory: $('#lengthAdvisory'),
+  practiceAllButton: $('#practiceAllButton'),
+  practiceSelectionButton: $('#practiceSelectionButton'),
+  sessionKicker: $('#sessionKicker'),
+  typeTitle: $('#typeTitle'),
+  backToDocumentButton: $('#backToDocumentButton'),
+  progressValue: $('#progressValue'),
+  timeValue: $('#timeValue'),
+  wpmValue: $('#wpmValue'),
+  accuracyValue: $('#accuracyValue'),
+  progressBar: $('#progressBar'),
+  typingPassage: $('#typingPassage'),
+  sessionOverlay: $('#sessionOverlay'),
+  overlayEyebrow: $('#overlayEyebrow'),
+  overlayTitle: $('#overlayTitle'),
+  overlayMessage: $('#overlayMessage'),
+  overlayActionButton: $('#overlayActionButton'),
+  startPauseButton: $('#startPauseButton'),
+  restartButton: $('#restartButton'),
+  endSessionButton: $('#endSessionButton'),
+  resultsPanel: $('#resultsPanel'),
+  resultsKicker: $('#resultsKicker'),
+  resultsTitle: $('#resultsTitle'),
+  resultsLead: $('#resultsLead'),
+  resultWpm: $('#resultWpm'),
+  resultAccuracy: $('#resultAccuracy'),
+  resultTime: $('#resultTime'),
+  resultErrors: $('#resultErrors'),
+  missedWords: $('#missedWords'),
+  tryAgainButton: $('#tryAgainButton'),
+  resultLibraryButton: $('#resultLibraryButton'),
+  openLibraryButton: $('#openLibraryButton'),
+  mistakeBadge: $('#mistakeBadge'),
+  libraryDialog: $('#libraryDialog'),
+  closeLibraryButton: $('#closeLibraryButton'),
+  libraryEmpty: $('#libraryEmpty'),
+  mistakeList: $('#mistakeList'),
+  libraryCount: $('#libraryCount'),
+  selectAllMistakes: $('#selectAllMistakes'),
+  practiceMistakesButton: $('#practiceMistakesButton'),
+  exportMistakesButton: $('#exportMistakesButton'),
+  importMistakesInput: $('#importMistakesInput'),
+  clearHistoryButton: $('#clearHistoryButton'),
+  soundToggle: $('#soundToggle'),
+  volumeRange: $('#volumeRange'),
+  confirmDialog: $('#confirmDialog'),
+  confirmTitle: $('#confirmTitle'),
+  confirmMessage: $('#confirmMessage'),
+  confirmCancel: $('#confirmCancel'),
+  confirmAccept: $('#confirmAccept'),
+  toast: $('#toast'),
+  announcements: $('#sessionAnnouncements'),
+};
+
+const mistakeStore = new MistakeStore();
+const keyboardAudio = new KeyboardAudio();
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const stageOrder = ['import', 'read', 'type'];
+
+const app = {
+  stage: 'import',
+  document: null,
+  documentText: '',
+  selectedText: '',
+  session: null,
+  sessionId: null,
+  sessionKind: 'document',
+  practiceWords: [],
+  practiceMarked: false,
+  wordRanges: [],
+  characterSpans: [],
+  sessionMistakes: new Map(),
+  timerId: null,
+  toastId: null,
+  parseRequest: 0,
+};
+
+function showStage(stage) {
+  app.stage = stage;
+  Object.entries(elements.stages).forEach(([name, panel]) => {
+    panel.hidden = name !== stage;
+    panel.classList.toggle('is-active', name === stage);
+  });
+  const activeIndex = stageOrder.indexOf(stage);
+  elements.stageMarkers.forEach((marker) => {
+    const index = stageOrder.indexOf(marker.dataset.stageMarker);
+    marker.classList.toggle('is-current', index === activeIndex);
+    marker.classList.toggle('is-done', index < activeIndex);
+    if (index === activeIndex) marker.setAttribute('aria-current', 'step');
+    else marker.removeAttribute('aria-current');
+  });
+  window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+}
+
+function announce(message) {
+  elements.announcements.textContent = '';
+  requestAnimationFrame(() => { elements.announcements.textContent = message; });
+}
+
+function showToast(message, duration = 3800) {
+  clearTimeout(app.toastId);
+  elements.toast.textContent = message;
+  elements.toast.hidden = false;
+  app.toastId = setTimeout(() => { elements.toast.hidden = true; }, duration);
+}
+
+function setParseStatus(type, title, message) {
+  elements.parseStatus.hidden = false;
+  elements.parseStatus.className = `parse-status${type ? ` is-${type}` : ''}`;
+  elements.parseStatusTitle.textContent = title;
+  elements.parseStatusMessage.textContent = message;
+}
+
+function clearParseStatus() {
+  elements.parseStatus.hidden = true;
+  elements.parseStatus.className = 'parse-status';
+}
+
+function resetSession() {
+  clearInterval(app.timerId);
+  app.timerId = null;
+  app.session = null;
+  app.sessionId = null;
+  app.characterSpans = [];
+  app.sessionMistakes.clear();
+  app.practiceWords = [];
+  app.practiceMarked = false;
+  app.wordRanges = [];
+  elements.typingPassage.replaceChildren();
+  elements.resultsPanel.hidden = true;
+}
+
+function resetDocument() {
+  app.parseRequest += 1;
+  resetSession();
+  app.document = null;
+  app.documentText = '';
+  app.selectedText = '';
+  elements.documentPreview.replaceChildren();
+  elements.fileInput.value = '';
+  updateSelectionUI('');
+  clearParseStatus();
+  elements.dropZone.removeAttribute('aria-busy');
+}
+
+async function confirmAction({ title, message, action = 'Continue' }) {
+  elements.confirmTitle.textContent = title;
+  elements.confirmMessage.textContent = message;
+  elements.confirmAccept.textContent = action;
+  elements.confirmDialog.showModal();
+  return new Promise((resolve) => {
+    const finish = (answer) => {
+      elements.confirmAccept.removeEventListener('click', accept);
+      elements.confirmCancel.removeEventListener('click', cancel);
+      elements.confirmDialog.removeEventListener('cancel', cancelEvent);
+      if (elements.confirmDialog.open) elements.confirmDialog.close();
+      resolve(answer);
+    };
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    const cancelEvent = (event) => { event.preventDefault(); finish(false); };
+    elements.confirmAccept.addEventListener('click', accept);
+    elements.confirmCancel.addEventListener('click', cancel);
+    elements.confirmDialog.addEventListener('cancel', cancelEvent);
+  });
+}
+
+function hasSessionProgress() {
+  return Boolean(app.session && (app.session.cursor > 0 || app.session.status === 'running' || app.session.status === 'paused'));
+}
+
+async function requestNewDocument() {
+  if (app.document || hasSessionProgress()) {
+    const approved = await confirmAction({
+      title: 'Choose another document?',
+      message: 'The current preview and typing session will be cleared. Saved mistake words will stay in your library.',
+      action: 'Clear document',
+    });
+    if (!approved) return;
+  }
+  resetDocument();
+  showStage('import');
+  elements.fileInput.click();
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  resetDocument();
+  const parseRequest = ++app.parseRequest;
+  showStage('import');
+  elements.dropZone.setAttribute('aria-busy', 'true');
+  setParseStatus('', 'Reading your document', 'Parsing locally in this browser. Nothing is being uploaded.');
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
+  try {
+    const result = await parseDocument(file);
+    if (parseRequest !== app.parseRequest) return;
+    // Parser output is sanitized before this insertion.
+    elements.documentPreview.innerHTML = result.html;
+    const practiceText = nodeToPracticeText(elements.documentPreview);
+    if (!isMeaningfulText(practiceText) || countWords(practiceText) === 0) {
+      throw new DocumentParseError('no-text', 'No usable text was found. Try a document with selectable words rather than images only.');
+    }
+    app.document = result;
+    app.documentText = practiceText;
+    elements.fileType.textContent = result.extension.toUpperCase();
+    elements.fileName.textContent = result.name;
+    elements.fileStats.textContent = `${countWords(practiceText).toLocaleString()} words · ${countCharacters(practiceText).toLocaleString()} characters`;
+    setParseStatus('success', 'Document ready', 'Your readable preview is ready for selection.');
+    elements.dropZone.removeAttribute('aria-busy');
+    setTimeout(() => {
+      if (parseRequest === app.parseRequest) showStage('read');
+    }, 260);
+    if (result.warnings.length) showToast(`Imported with ${result.warnings.length} formatting warning${result.warnings.length === 1 ? '' : 's'}. The readable text is available.`);
+  } catch (error) {
+    if (parseRequest !== app.parseRequest) return;
+    app.document = null;
+    app.documentText = '';
+    elements.documentPreview.replaceChildren();
+    const message = error instanceof DocumentParseError
+      ? error.message
+      : 'Something went wrong while reading this document. Check the file and try again.';
+    setParseStatus('error', 'Could not import this document', message);
+    elements.dropZone.removeAttribute('aria-busy');
+    elements.fileInput.value = '';
+  }
+}
+
+function updateSelectionUI(text) {
+  const words = countWords(text);
+  const characters = countCharacters(text);
+  const valid = isMeaningfulText(text) && words > 0;
+  app.selectedText = valid ? text : '';
+  elements.practiceSelectionButton.disabled = !valid;
+  elements.selectionSummary.classList.toggle('has-selection', valid);
+  elements.selectionSummary.querySelector('strong').textContent = valid
+    ? `${words.toLocaleString()} word${words === 1 ? '' : 's'} selected`
+    : 'No text selected';
+  elements.selectionSummary.querySelector('span:not(.selection-dot)').textContent = valid
+    ? `${characters.toLocaleString()} characters ready to practice`
+    : 'Drag across any text in the preview';
+  elements.lengthAdvisory.hidden = characters < 30000;
+  if (characters >= 30000) {
+    elements.lengthAdvisory.textContent = `This selection contains ${characters.toLocaleString()} characters. It may take longer to render and complete, but Margin will not truncate it.`;
+  }
+}
+
+function refreshSelection() {
+  if (app.stage !== 'read') return;
+  const selection = window.getSelection();
+  const text = extractSelectionText(selection, elements.documentPreview);
+  if (text || !document.activeElement?.closest?.('.selection-bar')) updateSelectionUI(text);
+}
+
+function makeSessionId() {
+  return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function renderTypingCharacters() {
+  const fragment = document.createDocumentFragment();
+  app.characterSpans = app.session.characters.map((character, index) => {
+    const span = document.createElement('span');
+    span.className = 'char';
+    span.textContent = character;
+    span.dataset.index = String(index);
+    if (/\s/u.test(character)) span.dataset.whitespace = 'true';
+    if (character === '\n') span.classList.add('is-newline');
+    fragment.append(span);
+    return span;
+  });
+  elements.typingPassage.replaceChildren(fragment);
+  updateCharacterState(0);
+}
+
+function updateCharacterState(index) {
+  const span = app.characterSpans[index];
+  if (!span || !app.session) return;
+  const evaluation = app.session.evaluations[index];
+  span.classList.toggle('is-correct', evaluation === 'correct');
+  span.classList.toggle('is-incorrect', evaluation === 'incorrect');
+  span.classList.toggle('is-current', index === app.session.cursor && app.session.status !== 'completed');
+}
+
+function keepCurrentVisible() {
+  const current = app.characterSpans[app.session?.cursor];
+  if (!current) return;
+  const container = elements.typingPassage;
+  const targetTop = current.offsetTop - container.clientHeight * 0.42;
+  if (Math.abs(container.scrollTop - targetTop) > container.clientHeight * 0.25) {
+    container.scrollTo({ top: Math.max(0, targetTop), behavior: reducedMotion ? 'auto' : 'smooth' });
+  }
+}
+
+function updateLiveStatistics() {
+  if (!app.session) return;
+  const stats = app.session.statistics();
+  const progress = app.session.status === 'completed' ? 100 : Math.min(99.9, stats.progress);
+  elements.progressValue.textContent = `${Math.floor(progress)}%`;
+  elements.timeValue.textContent = formatElapsed(stats.elapsedMs);
+  elements.wpmValue.textContent = String(Math.round(stats.wpm));
+  elements.accuracyValue.textContent = `${Math.round(stats.accuracy)}%`;
+  elements.progressBar.style.width = `${progress}%`;
+  elements.progressBar.parentElement.setAttribute('aria-valuenow', String(Math.floor(progress)));
+}
+
+function setOverlay(mode) {
+  const content = {
+    idle: ['Ready when you are', 'Start with one deliberate keystroke.', 'The timer begins only after you type the first character.', 'Start session'],
+    paused: ['Session paused', 'Your place is saved.', 'Resume when you are ready. Paused time is not counted.', 'Resume session'],
+  }[mode];
+  if (!content) {
+    elements.sessionOverlay.classList.add('is-hidden');
+    return;
+  }
+  elements.overlayEyebrow.textContent = content[0];
+  elements.overlayTitle.textContent = content[1];
+  elements.overlayMessage.textContent = content[2];
+  elements.overlayActionButton.textContent = content[3];
+  elements.sessionOverlay.classList.remove('is-hidden');
+}
+
+function beginTypingSession(text, { kind = 'document', practiceWords = [] } = {}) {
+  if (!isMeaningfulText(text) || countWords(text) === 0) {
+    showToast('Choose a passage that contains at least one readable word.');
+    return;
+  }
+  resetSession();
+  app.session = new TypingSession(text);
+  app.sessionId = makeSessionId();
+  app.sessionKind = kind;
+  app.practiceWords = practiceWords;
+  app.wordRanges = findWords(text);
+  app.sessionMistakes = new Map();
+  elements.sessionKicker.textContent = kind === 'mistakes' ? 'Mistake practice' : 'Typing session';
+  elements.typeTitle.textContent = kind === 'mistakes' ? 'Make the hard words familiar' : 'Find your rhythm';
+  elements.backToDocumentButton.textContent = app.document ? 'Back to document' : 'Back to import';
+  elements.resultsPanel.hidden = true;
+  elements.startPauseButton.hidden = false;
+  elements.restartButton.hidden = false;
+  elements.endSessionButton.hidden = false;
+  elements.startPauseButton.textContent = 'Start';
+  renderTypingCharacters();
+  updateLiveStatistics();
+  setOverlay('idle');
+  showStage('type');
+  elements.overlayActionButton.focus();
+}
+
+async function requestTypingSession(text, options = {}) {
+  const characters = countCharacters(text);
+  if (characters >= 30000) {
+    const approved = await confirmAction({
+      title: 'Start a long practice session?',
+      message: `This passage contains ${characters.toLocaleString()} characters. Rendering and scrolling may be slower on some devices, but nothing will be truncated.`,
+      action: 'Start full passage',
+    });
+    if (!approved) return;
+  }
+  beginTypingSession(text, options);
+}
+
+async function startOrResumeSession() {
+  if (!app.session) return;
+  await keyboardAudio.unlock();
+  if (app.session.status === 'idle') {
+    app.session.start();
+    if (app.sessionKind === 'mistakes' && !app.practiceMarked) {
+      mistakeStore.markPracticed(app.practiceWords, app.sessionId);
+      app.practiceMarked = true;
+      updateMistakeBadge();
+    }
+  } else if (app.session.status === 'paused') {
+    app.session.resume();
+  } else {
+    return;
+  }
+  setOverlay(null);
+  elements.startPauseButton.textContent = 'Pause';
+  elements.typingPassage.focus({ preventScroll: true });
+  clearInterval(app.timerId);
+  app.timerId = setInterval(updateLiveStatistics, 250);
+  announce(app.session.started ? 'Session resumed.' : 'Session ready. Timing begins with your first typed character.');
+}
+
+function pauseSession() {
+  if (!app.session?.pause()) return;
+  clearInterval(app.timerId);
+  updateLiveStatistics();
+  elements.startPauseButton.textContent = 'Resume';
+  setOverlay('paused');
+  elements.overlayActionButton.focus();
+  announce('Session paused. Paused time is not counted.');
+}
+
+function recordTypingMistake(evaluation) {
+  let low = 0;
+  let high = app.wordRanges.length - 1;
+  let match = null;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = app.wordRanges[middle];
+    if (evaluation.index < candidate.start) high = middle - 1;
+    else if (evaluation.index >= candidate.end) low = middle + 1;
+    else { match = candidate; break; }
+  }
+  if (!match) return;
+  const key = normalizeWordKey(match.word);
+  const current = app.sessionMistakes.get(key) || { word: match.word, count: 0 };
+  current.count += 1;
+  app.sessionMistakes.set(key, current);
+  mistakeStore.recordMistake({
+    word: match.word,
+    context: contextAround(app.session.source, match),
+    sessionId: app.sessionId,
+  });
+  updateMistakeBadge();
+}
+
+function handleTypingKeydown(event) {
+  if (!app.session || app.session.status !== 'running' || event.isComposing) return;
+  if (event.key === 'Backspace') {
+    event.preventDefault();
+    const oldCursor = app.session.cursor;
+    if (app.session.backspace()) {
+      updateCharacterState(oldCursor);
+      updateCharacterState(app.session.cursor);
+      updateLiveStatistics();
+      keepCurrentVisible();
+    }
+    return;
+  }
+  if (event.key === 'Tab' && (event.shiftKey || app.session.characters[app.session.cursor] !== '\t')) return;
+  const input = keyboardInputFromEvent(event);
+  if (input === null) return;
+  event.preventDefault();
+  const evaluation = app.session.evaluate(input);
+  if (!evaluation) return;
+  keyboardAudio.play();
+  if (!evaluation.correct) recordTypingMistake(evaluation);
+  updateCharacterState(evaluation.index);
+  updateCharacterState(app.session.cursor);
+  updateLiveStatistics();
+  keepCurrentVisible();
+  if (evaluation.completed) finishSession(true);
+}
+
+function topMissedWords() {
+  return [...app.sessionMistakes.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+}
+
+function finishSession(completed) {
+  clearInterval(app.timerId);
+  app.timerId = null;
+  if (!completed) app.session.end();
+  updateLiveStatistics();
+  const stats = app.session.statistics();
+  elements.resultsKicker.textContent = completed ? 'Session complete' : 'Session ended';
+  elements.resultsTitle.textContent = completed ? 'A little smoother than before.' : 'A useful stopping point.';
+  elements.resultsLead.textContent = completed
+    ? 'Every character was evaluated. Here is how the session felt in numbers.'
+    : `You handled ${app.session.cursor.toLocaleString()} of ${app.session.characters.length.toLocaleString()} characters.`;
+  elements.resultWpm.textContent = String(Math.round(stats.wpm));
+  elements.resultAccuracy.textContent = `${Math.round(stats.accuracy)}%`;
+  elements.resultTime.textContent = formatElapsed(stats.elapsedMs);
+  elements.resultErrors.textContent = app.session.errorCount.toLocaleString();
+  const missed = topMissedWords();
+  elements.missedWords.replaceChildren();
+  if (missed.length) {
+    const label = document.createElement('span');
+    label.textContent = 'Most missed: ';
+    elements.missedWords.append(label);
+    missed.forEach(({ word, count }, index) => {
+      const item = document.createElement('strong');
+      item.textContent = `${word} (${count})${index < missed.length - 1 ? ', ' : ''}`;
+      elements.missedWords.append(item);
+    });
+  } else {
+    elements.missedWords.textContent = 'No target words were missed in this session.';
+  }
+  setOverlay(null);
+  elements.resultsPanel.hidden = false;
+  elements.startPauseButton.hidden = true;
+  elements.endSessionButton.hidden = true;
+  elements.restartButton.hidden = true;
+  announce(completed ? `Session completed at ${Math.round(stats.wpm)} words per minute with ${Math.round(stats.accuracy)} percent accuracy.` : 'Session ended. Results are available below.');
+  elements.resultsPanel.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+}
+
+async function restartSession({ confirm = true } = {}) {
+  if (!app.session) return;
+  if (confirm && app.session.cursor > 0) {
+    const approved = await confirmAction({
+      title: 'Restart this passage?',
+      message: 'Current timing and keystroke statistics will reset. Mistakes already saved in your library will remain.',
+      action: 'Restart',
+    });
+    if (!approved) return;
+  }
+  app.session.restart();
+  app.sessionId = makeSessionId();
+  app.sessionMistakes.clear();
+  app.practiceMarked = false;
+  app.characterSpans.forEach((_, index) => updateCharacterState(index));
+  elements.typingPassage.scrollTop = 0;
+  elements.resultsPanel.hidden = true;
+  elements.startPauseButton.hidden = false;
+  elements.restartButton.hidden = false;
+  elements.endSessionButton.hidden = false;
+  elements.startPauseButton.textContent = 'Start';
+  updateLiveStatistics();
+  setOverlay('idle');
+  clearInterval(app.timerId);
+  elements.overlayActionButton.focus();
+}
+
+async function endSession() {
+  if (!app.session || ['ended', 'completed'].includes(app.session.status)) return;
+  if (app.session.cursor > 0) {
+    const approved = await confirmAction({
+      title: 'End this session?',
+      message: 'You will see results for the characters handled so far. Saved mistake words will remain in your library.',
+      action: 'End session',
+    });
+    if (!approved) return;
+  }
+  finishSession(false);
+}
+
+async function leaveTyping() {
+  if (hasSessionProgress() && !['completed', 'ended'].includes(app.session.status)) {
+    const approved = await confirmAction({
+      title: 'Leave this session?',
+      message: 'The active session will end. Any mistake words already recorded will stay saved.',
+      action: 'Leave session',
+    });
+    if (!approved) return;
+  }
+  resetSession();
+  showStage(app.document ? 'read' : 'import');
+}
+
+function updateMistakeBadge() {
+  const count = mistakeStore.list().length;
+  elements.mistakeBadge.textContent = count > 99 ? '99+' : String(count);
+  elements.mistakeBadge.setAttribute('aria-label', `${count} saved mistake word${count === 1 ? '' : 's'}`);
+}
+
+function formatPracticeDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getTime() === 0) return 'Date unavailable';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
+}
+
+function selectedMistakeKeys() {
+  return [...elements.mistakeList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+}
+
+function updateLibrarySelectionControls() {
+  const records = mistakeStore.list();
+  const selected = selectedMistakeKeys();
+  elements.practiceMistakesButton.disabled = selected.length === 0;
+  elements.practiceMistakesButton.textContent = selected.length ? `Practice mistakes (${selected.length})` : 'Practice mistakes';
+  elements.selectAllMistakes.checked = records.length > 0 && selected.length === records.length;
+  elements.selectAllMistakes.indeterminate = selected.length > 0 && selected.length < records.length;
+}
+
+function renderMistakeLibrary() {
+  const records = mistakeStore.list();
+  elements.mistakeList.replaceChildren();
+  elements.libraryEmpty.hidden = records.length > 0;
+  elements.mistakeList.hidden = records.length === 0;
+  elements.libraryCount.textContent = `${records.length.toLocaleString()} saved word${records.length === 1 ? '' : 's'}`;
+  elements.clearHistoryButton.disabled = records.length === 0;
+  elements.selectAllMistakes.disabled = records.length === 0;
+
+  const fragment = document.createDocumentFragment();
+  records.forEach((record) => {
+    const row = document.createElement('div');
+    row.className = 'mistake-item';
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.value = record.key;
+    check.setAttribute('aria-label', `Select ${record.display}`);
+    const word = document.createElement('strong');
+    word.className = 'mistake-word';
+    word.textContent = record.display;
+    const context = document.createElement('span');
+    context.className = 'mistake-context';
+    context.textContent = record.context ? `“${record.context}”` : 'No source context available';
+    const count = document.createElement('span');
+    count.className = 'mistake-count';
+    count.textContent = `${record.mistakeCount} mistake${record.mistakeCount === 1 ? '' : 's'} · ${record.sessionCount} session${record.sessionCount === 1 ? '' : 's'}`;
+    const date = document.createElement('time');
+    date.className = 'mistake-date';
+    date.dateTime = record.lastPracticed;
+    date.textContent = formatPracticeDate(record.lastPracticed);
+    const remove = document.createElement('button');
+    remove.className = 'remove-word';
+    remove.type = 'button';
+    remove.textContent = 'Remove';
+    remove.dataset.removeKey = record.key;
+    remove.setAttribute('aria-label', `Remove ${record.display} from mistake history`);
+    row.append(check, word, context, count, date, remove);
+    fragment.append(row);
+  });
+  elements.mistakeList.append(fragment);
+  updateLibrarySelectionControls();
+  updateMistakeBadge();
+}
+
+function openLibrary() {
+  if (app.session?.status === 'running') pauseSession();
+  renderMistakeLibrary();
+  if (!elements.libraryDialog.open) elements.libraryDialog.showModal();
+}
+
+async function removeMistake(key) {
+  const record = mistakeStore.list().find((item) => item.key === key);
+  if (!record) return;
+  const approved = await confirmAction({
+    title: `Remove “${record.display}”?`,
+    message: 'Its mistake counts and recent context will be permanently removed from this browser.',
+    action: 'Remove word',
+  });
+  if (!approved) return;
+  mistakeStore.remove(key);
+  renderMistakeLibrary();
+}
+
+async function practiceSelectedMistakes() {
+  const selected = new Set(selectedMistakeKeys());
+  const records = mistakeStore.list().filter(({ key }) => selected.has(key));
+  const text = buildMistakePractice(records);
+  if (!text) {
+    showToast('Select at least one saved word to practice.');
+    return;
+  }
+  if (hasSessionProgress() && !['completed', 'ended'].includes(app.session.status)) {
+    const approved = await confirmAction({
+      title: 'Start a new mistake session?',
+      message: 'The current typing session will end. Its saved mistake words will remain in your library.',
+      action: 'Start mistake practice',
+    });
+    if (!approved) return;
+  }
+  elements.libraryDialog.close();
+  beginTypingSession(text, { kind: 'mistakes', practiceWords: records.map(({ display }) => display) });
+}
+
+function exportMistakes() {
+  const blob = new Blob([mistakeStore.exportJSON()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `margin-mistakes-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function importMistakes(file) {
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    showToast('That JSON file is larger than 2 MB. Choose a smaller Margin export.');
+    return;
+  }
+  try {
+    mistakeStore.importJSON(await file.text());
+    renderMistakeLibrary();
+    showToast('Mistake history imported and merged.');
+  } catch (error) {
+    showToast(error.message || 'That mistake-history file could not be imported.');
+  } finally {
+    elements.importMistakesInput.value = '';
+  }
+}
+
+function syncSoundControls() {
+  const { enabled, volume } = keyboardAudio.preferences;
+  elements.soundToggle.setAttribute('aria-pressed', String(enabled));
+  elements.soundToggle.setAttribute('aria-label', enabled ? 'Turn key sound off' : 'Turn key sound on');
+  elements.volumeRange.value = String(Math.round(volume * 100));
+  elements.volumeRange.disabled = !enabled;
+}
+
+function wireEvents() {
+  elements.fileInput.addEventListener('change', () => handleFile(elements.fileInput.files[0]));
+  elements.dropZone.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      elements.fileInput.click();
+    }
+  });
+  ['dragenter', 'dragover'].forEach((type) => elements.dropZone.addEventListener(type, (event) => {
+    event.preventDefault();
+    elements.dropZone.classList.add('is-dragging');
+  }));
+  ['dragleave', 'drop'].forEach((type) => elements.dropZone.addEventListener(type, (event) => {
+    event.preventDefault();
+    elements.dropZone.classList.remove('is-dragging');
+  }));
+  elements.dropZone.addEventListener('drop', (event) => handleFile(event.dataTransfer.files[0]));
+  elements.replaceDocumentButton.addEventListener('click', requestNewDocument);
+  elements.homeButton.addEventListener('click', async () => {
+    if (app.stage === 'import') return;
+    if (app.document || hasSessionProgress()) {
+      const approved = await confirmAction({
+        title: 'Return to import?',
+        message: 'The current document and session will be cleared. Saved mistake words will remain.',
+        action: 'Return to import',
+      });
+      if (!approved) return;
+    }
+    resetDocument();
+    showStage('import');
+  });
+
+  document.addEventListener('selectionchange', refreshSelection);
+  elements.practiceSelectionButton.addEventListener('click', () => requestTypingSession(app.selectedText));
+  elements.practiceAllButton.addEventListener('click', () => requestTypingSession(app.documentText));
+  elements.backToDocumentButton.addEventListener('click', leaveTyping);
+  elements.overlayActionButton.addEventListener('click', startOrResumeSession);
+  elements.startPauseButton.addEventListener('click', () => {
+    if (app.session?.status === 'running') pauseSession();
+    else startOrResumeSession();
+  });
+  elements.restartButton.addEventListener('click', restartSession);
+  elements.endSessionButton.addEventListener('click', endSession);
+  elements.tryAgainButton.addEventListener('click', () => restartSession({ confirm: false }));
+  elements.typingPassage.addEventListener('keydown', handleTypingKeydown);
+  elements.typingPassage.addEventListener('paste', (event) => {
+    if (!app.session || !['running', 'paused'].includes(app.session.status)) return;
+    event.preventDefault();
+    showToast('Paste is disabled during practice so speed and accuracy stay meaningful.');
+    announce('Paste blocked. Type the passage one character at a time.');
+  });
+
+  elements.openLibraryButton.addEventListener('click', openLibrary);
+  elements.resultLibraryButton.addEventListener('click', openLibrary);
+  elements.closeLibraryButton.addEventListener('click', () => elements.libraryDialog.close());
+  elements.mistakeList.addEventListener('change', updateLibrarySelectionControls);
+  elements.mistakeList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-key]');
+    if (button) removeMistake(button.dataset.removeKey);
+  });
+  elements.selectAllMistakes.addEventListener('change', () => {
+    elements.mistakeList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+      input.checked = elements.selectAllMistakes.checked;
+    });
+    updateLibrarySelectionControls();
+  });
+  elements.practiceMistakesButton.addEventListener('click', practiceSelectedMistakes);
+  elements.exportMistakesButton.addEventListener('click', exportMistakes);
+  elements.importMistakesInput.addEventListener('change', () => importMistakes(elements.importMistakesInput.files[0]));
+  elements.clearHistoryButton.addEventListener('click', async () => {
+    const approved = await confirmAction({
+      title: 'Clear all mistake history?',
+      message: 'Every saved word, count, and source context will be permanently removed from this browser.',
+      action: 'Clear history',
+    });
+    if (!approved) return;
+    mistakeStore.clear();
+    renderMistakeLibrary();
+  });
+
+  elements.soundToggle.addEventListener('click', async () => {
+    if (app.session?.status === 'running') pauseSession();
+    const enabled = !keyboardAudio.preferences.enabled;
+    keyboardAudio.setEnabled(enabled);
+    if (enabled) await keyboardAudio.unlock();
+    syncSoundControls();
+    announce(`Key sound ${enabled ? 'on' : 'off'}.`);
+  });
+  elements.volumeRange.addEventListener('input', () => {
+    if (app.session?.status === 'running') pauseSession();
+    keyboardAudio.setVolume(Number(elements.volumeRange.value) / 100);
+  });
+  window.addEventListener('beforeunload', () => {
+    clearInterval(app.timerId);
+    keyboardAudio.destroy();
+  });
+}
+
+wireEvents();
+keyboardAudio.preload();
+syncSoundControls();
+updateMistakeBadge();
+showStage('import');
+</file>
+
+<file path="src/styles.css">
+@layer theme, base, components, utilities;
+
+@layer theme {
+  :root {
+    color-scheme: light;
+    --paper: #f5f1e8;
+    --paper-deep: #ebe4d7;
+    --white: #fffdf8;
+    --ink: #1f2925;
+    --muted: #5f6963;
+    --line: #d8d2c6;
+    --forest: #224b3c;
+    --forest-dark: #17372c;
+    --sage: #91aa99;
+    --sage-pale: #dbe6dc;
+    --rust: #a04732;
+    --rust-pale: #f3dcd5;
+    --gold: #76551d;
+    --shadow: 0 22px 70px rgba(45, 48, 39, 0.1);
+    --serif: Georgia, 'Times New Roman', serif;
+    --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { min-width: 320px; background: var(--paper); scroll-behavior: smooth; }
+  body { margin: 0; color: var(--ink); background: var(--paper); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; }
+  button, label[for] { -webkit-tap-highlight-color: transparent; }
+  button { color: inherit; }
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible, a:focus-visible {
+    outline: 3px solid #bd7a3a;
+    outline-offset: 3px;
+  }
+  ::selection { color: var(--forest-dark); background: #c9dacb; }
+  [hidden] { display: none !important; }
+}
+
+@layer components {
+  .visually-hidden {
+    position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important;
+    margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important; border: 0 !important;
+  }
+  .skip-link { position: fixed; z-index: 100; left: 1rem; top: 1rem; transform: translateY(-160%); background: var(--ink); color: white; padding: .7rem 1rem; }
+  .skip-link:focus { transform: none; }
+  .app-header {
+    height: 72px; padding: 0 clamp(1rem, 4vw, 4rem); display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; border-bottom: 1px solid color-mix(in srgb, var(--line), transparent 20%); background: rgba(245,241,232,.92);
+    backdrop-filter: blur(16px); position: relative; z-index: 20;
+  }
+  .wordmark { border: 0; padding: 0; background: none; display: flex; align-items: center; gap: .65rem; font: 700 1.05rem var(--serif); cursor: pointer; width: max-content; }
+  .wordmark-mark { width: 30px; height: 34px; display: grid; place-items: center; color: var(--paper); background: var(--forest); border-radius: 15px 15px 5px 5px; font-size: 1rem; }
+  .stage-nav { display: flex; align-items: center; color: #858b86; font-size: .74rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .stage-step { display: flex; align-items: center; gap: .42rem; white-space: nowrap; }
+  .stage-step b { width: 23px; height: 23px; display: grid; place-items: center; border: 1px solid #aaa9a0; border-radius: 50%; font-size: .69rem; }
+  .stage-step.is-current { color: var(--forest); }
+  .stage-step.is-current b { color: var(--white); border-color: var(--forest); background: var(--forest); }
+  .stage-step.is-done b { color: var(--forest); border-color: var(--sage); background: var(--sage-pale); }
+  .stage-line { width: clamp(18px, 4vw, 52px); height: 1px; margin: 0 .5rem; background: var(--line); }
+  .header-actions { justify-self: end; display: flex; align-items: center; gap: 1.15rem; }
+  .text-button { border: 0; padding: .45rem .15rem; background: none; font-size: .84rem; font-weight: 700; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: .28rem; }
+  .text-button:hover { text-decoration-color: currentColor; }
+  .text-button.subtle { color: var(--muted); }
+  .text-button.danger { color: var(--rust); }
+  .count-badge { display: inline-grid; min-width: 21px; height: 21px; margin-left: .2rem; padding: 0 .3rem; place-items: center; color: var(--white); background: var(--rust); border-radius: 11px; font-size: .68rem; text-decoration: none; }
+  .sound-menu { display: flex; align-items: center; gap: .55rem; }
+  .icon-button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; background: transparent; cursor: pointer; display: grid; place-items: center; }
+  .sound-glyph { width: 13px; height: 13px; border: solid var(--forest); border-width: 0 3px 0 0; position: relative; }
+  .sound-glyph::before { content: ''; position: absolute; width: 6px; height: 8px; left: -5px; top: 2px; background: var(--forest); clip-path: polygon(0 30%,35% 30%,100% 0,100% 100%,35% 70%,0 70%); }
+  [aria-pressed="false"] .sound-glyph::after { content: ''; position: absolute; width: 16px; height: 2px; background: var(--rust); transform: rotate(45deg); left: -7px; top: 6px; }
+  .volume-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+  .volume-range { width: 68px; accent-color: var(--forest); cursor: pointer; }
+
+  .stage-panel { min-height: calc(100vh - 72px); }
+  .import-stage { position: relative; overflow: hidden; }
+  .import-stage::before { content: ''; position: absolute; inset: 0 52% 0 0; opacity: .42; background-image: repeating-linear-gradient(0deg, transparent 0 31px, rgba(34,75,60,.085) 31px 32px), linear-gradient(90deg, rgba(255,253,248,.5), transparent); pointer-events: none; }
+  .import-stage::after { content: 'M'; position: absolute; left: -3vw; bottom: -20vh; font: 700 min(70vw, 700px)/1 var(--serif); color: rgba(34,75,60,.035); pointer-events: none; }
+  .import-composition { min-height: calc(100vh - 72px); max-width: 1320px; margin: auto; padding: clamp(3rem, 7vw, 7.5rem) clamp(1.25rem, 5vw, 5rem); display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(360px, .92fr); align-items: center; gap: clamp(3rem, 9vw, 9rem); position: relative; z-index: 1; }
+  .kicker { margin: 0 0 .8rem; color: var(--gold); font-size: .69rem; line-height: 1.2; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  .brand-title { margin: 0; font: 700 clamp(5rem, 11vw, 9.2rem)/.82 var(--serif); letter-spacing: -.065em; color: var(--forest); }
+  .hero-line { max-width: 620px; margin: 2.2rem 0 1rem; font: 500 clamp(1.6rem, 3vw, 2.65rem)/1.12 var(--serif); letter-spacing: -.03em; }
+  .hero-support { max-width: 530px; margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.75; }
+  .upload-panel { align-self: center; }
+  .drop-zone { min-height: 410px; padding: 3rem; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1.5px dashed #91a095; background: rgba(255,253,248,.72); box-shadow: var(--shadow); cursor: pointer; transition: transform .25s ease, border-color .25s ease, background .25s ease; }
+  .drop-zone:hover, .drop-zone.is-dragging { transform: translateY(-4px); border-color: var(--forest); background: var(--white); }
+  .document-glyph { width: 66px; height: 78px; padding: 25px 15px 0; border: 2px solid var(--forest); border-radius: 2px 15px 2px 2px; display: flex; flex-direction: column; gap: 7px; position: relative; }
+  .document-glyph::after { content: ''; position: absolute; right: -2px; top: -2px; width: 20px; height: 20px; border-left: 2px solid var(--forest); border-bottom: 2px solid var(--forest); background: var(--paper); border-radius: 0 12px 0 0; }
+  .document-glyph i { display: block; height: 2px; background: var(--sage); }
+  .drop-title { margin-top: 1.35rem; font: 600 1.45rem var(--serif); }
+  .drop-divider { margin: .75rem; color: var(--muted); font-size: .75rem; text-transform: uppercase; }
+  .drop-help { margin-top: 1rem; color: var(--muted); font-size: .78rem; }
+  .button { min-height: 43px; padding: .68rem 1.15rem; border: 1px solid transparent; border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; font-size: .83rem; font-weight: 800; cursor: pointer; transition: transform .16s ease, background .16s ease, color .16s ease; }
+  .button:hover:not(:disabled) { transform: translateY(-2px); }
+  .button:disabled { opacity: .45; cursor: not-allowed; }
+  .button-primary { color: #fff; background: var(--forest); border-color: var(--forest); }
+  .button-primary:hover:not(:disabled) { background: var(--forest-dark); }
+  .button-secondary { color: var(--forest); background: transparent; border-color: #9eaaa2; }
+  .button-danger { color: white; background: var(--rust); border-color: var(--rust); }
+  .button-small { min-height: 36px; padding: .48rem .8rem; font-size: .75rem; }
+  .privacy-note { margin: 1.25rem auto 0; max-width: 440px; display: flex; gap: .8rem; align-items: flex-start; color: var(--muted); font-size: .75rem; line-height: 1.55; }
+  .privacy-note p { margin: 0; }
+  .privacy-lock { flex: 0 0 auto; width: 14px; height: 12px; margin-top: 5px; border: 1.5px solid var(--forest); position: relative; }
+  .privacy-lock::before { content: ''; position: absolute; width: 8px; height: 7px; left: 1.5px; top: -7px; border: 1.5px solid var(--forest); border-bottom: 0; border-radius: 7px 7px 0 0; }
+  .parse-status { min-height: 100px; padding: 1.5rem; align-items: center; gap: 1rem; border: 1px solid var(--line); background: var(--white); box-shadow: var(--shadow); }
+  .parse-status:not([hidden]) { display: flex; }
+  .parse-status p { margin: .35rem 0 0; color: var(--muted); font-size: .82rem; }
+  .parse-status.is-error { border-color: #d8a99e; background: #fff8f5; }
+  .parse-status.is-success { border-color: #a7bcae; background: #f7fbf7; }
+  .status-spinner { width: 26px; height: 26px; border: 2px solid var(--line); border-top-color: var(--forest); border-radius: 50%; animation: spin .8s linear infinite; }
+  .is-error .status-spinner { border: 0; animation: none; }
+  .is-error .status-spinner::before { content: '!'; width: 26px; height: 26px; display: grid; place-items: center; color: white; background: var(--rust); border-radius: 50%; font-weight: 800; }
+  .is-success .status-spinner { border: 0; animation: none; }
+  .is-success .status-spinner::before { content: ''; width: 26px; height: 26px; display: block; border-radius: 50%; background: var(--forest); clip-path: polygon(20% 52%, 38% 70%, 78% 27%, 85% 35%, 38% 82%, 13% 59%); }
+
+  .read-stage, .type-stage { max-width: 1120px; margin: auto; padding: clamp(2.5rem, 5vw, 5rem) clamp(1rem, 4vw, 3rem) 7rem; }
+  .section-heading, .typing-topbar { display: flex; align-items: end; justify-content: space-between; gap: 2rem; margin-bottom: 2rem; }
+  .section-heading h1, .typing-topbar h1 { margin: 0; font: 600 clamp(2rem, 5vw, 3.6rem)/1 var(--serif); letter-spacing: -.04em; }
+  .section-heading p:not(.kicker) { margin: .8rem 0 0; color: var(--muted); }
+  .document-meta { max-width: 850px; margin: 0 auto 1rem; display: flex; align-items: center; padding: .8rem 0; border-bottom: 1px solid var(--line); }
+  .file-type { padding: .35rem .5rem; color: var(--forest); border: 1px solid var(--sage); font-size: .65rem; font-weight: 900; letter-spacing: .1em; }
+  .file-identity { margin-left: .8rem; min-width: 0; display: flex; flex-direction: column; gap: .16rem; }
+  .file-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
+  .file-identity span { color: var(--muted); font-size: .7rem; }
+  .success-label { margin-left: auto; color: var(--forest); font-size: .73rem; font-weight: 800; }
+  .success-label i { display: inline-block; width: 7px; height: 7px; margin-right: .35rem; background: #538064; border-radius: 50%; }
+  .document-preview { min-height: 470px; max-height: min(62vh, 720px); max-width: 850px; margin: auto; padding: clamp(2rem, 6vw, 5rem); overflow: auto; background: var(--white); border: 1px solid #e4ded2; box-shadow: 0 18px 55px rgba(57,55,45,.08); font: 400 1.04rem/1.82 var(--serif); scrollbar-color: var(--sage) transparent; }
+  .document-preview h1, .document-preview h2, .document-preview h3 { color: var(--forest); line-height: 1.15; }
+  .document-preview h1 { font-size: 2.25rem; }
+  .document-preview h2 { margin-top: 2.2em; font-size: 1.65rem; }
+  .document-preview blockquote { margin-left: 0; padding-left: 1.2rem; border-left: 3px solid var(--sage); color: var(--muted); }
+  .document-preview pre { max-width: 100%; padding: 1rem; overflow: auto; color: #e8eee9; background: #28352f; font: .84rem/1.6 ui-monospace, monospace; white-space: pre-wrap; }
+  .document-preview code { font-family: ui-monospace, monospace; }
+  .document-preview table { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: .78rem; }
+  .document-preview th, .document-preview td { padding: .65rem; border: 1px solid var(--line); text-align: left; }
+  .document-preview img { display: block; max-width: 100%; height: auto; margin: 1.5rem auto; }
+  .document-preview a { color: var(--forest); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .plain-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .selection-bar { max-width: 850px; margin: 1rem auto 0; padding: 1rem 1.1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(245,241,232,.94); position: sticky; bottom: 0; backdrop-filter: blur(12px); }
+  .selection-summary { display: flex; align-items: center; gap: .75rem; min-width: 180px; }
+  .selection-summary > div { display: flex; flex-direction: column; gap: .18rem; }
+  .selection-summary strong { font: 600 .9rem var(--serif); }
+  .selection-summary span:not(.selection-dot) { color: var(--muted); font-size: .7rem; }
+  .selection-dot { width: 9px; height: 9px; flex: 0 0 auto; background: #aaa9a0; border-radius: 50%; }
+  .has-selection .selection-dot { background: var(--forest); box-shadow: 0 0 0 5px var(--sage-pale); }
+  .selection-actions { display: flex; gap: .7rem; }
+  .advisory { max-width: 850px; margin: 1rem auto; padding: .85rem 1rem; color: #6b511f; border-left: 3px solid var(--gold); background: #f7edd7; font-size: .78rem; line-height: 1.5; }
+
+  .type-stage { max-width: 1040px; }
+  .typing-topbar { margin-bottom: 1.5rem; }
+  .typing-topbar h1 { font-size: clamp(1.8rem, 4vw, 3rem); }
+  .live-stats { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 .75rem; }
+  .live-stats div { display: flex; align-items: baseline; justify-content: center; gap: .45rem; border-right: 1px solid var(--line); }
+  .live-stats div:first-child { justify-content: flex-start; }
+  .live-stats div:last-child { justify-content: flex-end; border: 0; }
+  .live-stats span { color: var(--muted); font-size: .69rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+  .live-stats strong { font: 600 1.35rem var(--serif); font-variant-numeric: tabular-nums; }
+  .progress-track { height: 2px; background: var(--line); overflow: hidden; }
+  .progress-track span { display: block; width: 0; height: 100%; background: var(--forest); transition: width .2s ease; }
+  .typing-shell { height: min(54vh, 560px); min-height: 360px; margin-top: 1.5rem; position: relative; background: var(--white); border: 1px solid #e2dbcf; box-shadow: 0 20px 60px rgba(57,55,45,.08); overflow: hidden; }
+  .typing-passage { height: 100%; padding: clamp(2rem, 7vw, 5.5rem); overflow-y: auto; outline: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 clamp(1.18rem, 2.1vw, 1.55rem)/1.95 var(--serif); letter-spacing: .01em; scrollbar-color: var(--sage) transparent; }
+  .char { color: #68716c; border-radius: 1px; transition: color .08s, background .08s; }
+  .char.is-correct { color: #294236; font-weight: 600; }
+  .char.is-incorrect { color: #872f22; background: var(--rust-pale); text-decoration: underline wavy #872f22 1px; text-underline-offset: 4px; }
+  .char.is-current { color: var(--ink); background: #d7e3d9; box-shadow: inset 2px 0 0 var(--forest); animation: cursor-pulse 1.25s ease-in-out infinite; }
+  .char.is-current[data-whitespace="true"], .char.is-incorrect[data-whitespace="true"] { min-width: .38em; display: inline-block; }
+  .char.is-incorrect[data-whitespace="true"]::after { content: '·'; display: inline; font-family: var(--sans); }
+  .char.is-newline { display: inline; }
+  .char.is-newline.is-current::before, .char.is-newline.is-incorrect::before { content: '\21B5'; display: inline-block; width: 1em; font: .7em var(--sans); text-align: center; }
+  .session-overlay { position: absolute; z-index: 3; inset: 0; padding: 2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: rgba(255,253,248,.94); backdrop-filter: blur(5px); transition: opacity .25s ease; }
+  .session-overlay.is-hidden { opacity: 0; pointer-events: none; }
+  .session-overlay .eyebrow { color: var(--gold); font-size: .68rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+  .session-overlay strong { max-width: 540px; margin-top: .8rem; font: 600 clamp(1.55rem, 4vw, 2.6rem)/1.1 var(--serif); }
+  .session-overlay p { max-width: 450px; margin: .8rem 0 1.5rem; color: var(--muted); line-height: 1.6; }
+  .typing-hint { color: var(--muted); text-align: center; font-size: .7rem; }
+  kbd { padding: .14rem .35rem; border: 1px solid var(--line); border-bottom-width: 2px; background: var(--white); font: .67rem var(--sans); }
+  .session-controls { display: flex; justify-content: center; align-items: center; gap: .8rem; margin-top: 1.2rem; }
+  .results { margin-top: 3rem; padding: 3rem 0; border-top: 1px solid var(--line); text-align: center; animation: rise .5s ease both; }
+  .results h2 { margin: 0; font: 600 clamp(2rem, 5vw, 3.4rem)/1.05 var(--serif); }
+  .results > p:not(.kicker) { color: var(--muted); }
+  .result-grid { max-width: 690px; margin: 2.4rem auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+  .result-grid div { display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  .result-grid div:last-child { border: 0; }
+  .result-grid strong { font: 600 2rem var(--serif); }
+  .result-grid span { color: var(--muted); font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .missed-words { min-height: 1.5rem; color: var(--muted); font-size: .8rem; }
+  .missed-words strong { color: var(--rust); }
+  .result-actions { margin-top: 1.8rem; display: flex; justify-content: center; gap: .8rem; }
+
+  dialog { color: var(--ink); }
+  dialog::backdrop { background: rgba(24,35,30,.58); backdrop-filter: blur(3px); }
+  .library-dialog { width: min(920px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); padding: 0; border: 0; background: var(--paper); box-shadow: 0 30px 100px rgba(12,22,17,.35); }
+  .dialog-header { padding: 2rem 2.25rem 1.5rem; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--line); }
+  .dialog-header h1 { margin: 0; font: 600 2.5rem var(--serif); }
+  .dialog-header p:not(.kicker) { margin: .5rem 0 0; color: var(--muted); font-size: .82rem; }
+  .close-button { border: 0; background: none; font-size: .75rem; font-weight: 800; cursor: pointer; }
+  .library-toolbar { padding: 1rem 2.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-bottom: 1px solid var(--line); }
+  .library-toolbar > div { display: flex; align-items: center; gap: .9rem; }
+  .select-all { font-size: .78rem; font-weight: 700; }
+  .select-all input, .mistake-item input { accent-color: var(--forest); }
+  .file-label { display: inline-block; }
+  .library-empty { padding: 5rem 2rem; text-align: center; }
+  .library-empty h2 { margin: 1.2rem 0 .5rem; font: 600 1.7rem var(--serif); }
+  .library-empty p { max-width: 400px; margin: auto; color: var(--muted); font-size: .85rem; line-height: 1.6; }
+  .empty-rings { width: 55px; height: 55px; display: inline-block; border: 1px solid var(--sage); border-radius: 50%; box-shadow: 0 0 0 9px var(--sage-pale), 0 0 0 10px var(--sage); }
+  .mistake-list { max-height: 54vh; overflow-y: auto; }
+  .mistake-item { padding: 1rem 2.25rem; display: grid; grid-template-columns: auto minmax(130px, .7fr) minmax(220px, 1.5fr) auto auto auto; align-items: center; gap: 1rem; border-bottom: 1px solid var(--line); }
+  .mistake-word { font: 600 1.1rem var(--serif); overflow-wrap: anywhere; }
+  .mistake-context { color: var(--muted); font: italic .78rem/1.45 var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mistake-count { color: var(--rust); font-size: .72rem; font-weight: 800; white-space: nowrap; }
+  .mistake-date { color: var(--muted); font-size: .68rem; white-space: nowrap; }
+  .remove-word { border: 0; background: none; color: var(--muted); font-size: .7rem; font-weight: 800; cursor: pointer; }
+  .library-footer { padding: 1rem 2.25rem; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: .75rem; }
+  .confirm-dialog { width: min(440px, calc(100vw - 2rem)); padding: 2rem; border: 0; background: var(--white); box-shadow: var(--shadow); }
+  .confirm-dialog h2 { margin: 0; font: 600 1.7rem var(--serif); }
+  .confirm-dialog p { color: var(--muted); font-size: .85rem; line-height: 1.6; }
+  .confirm-dialog > div { margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: .7rem; }
+  .toast { position: fixed; z-index: 100; left: 50%; bottom: 1.5rem; transform: translateX(-50%); max-width: min(500px, calc(100vw - 2rem)); padding: .85rem 1rem; color: white; background: var(--ink); box-shadow: var(--shadow); font-size: .8rem; text-align: center; animation: toast-in .2s ease both; }
+
+  .motion-rise { animation: rise .7s cubic-bezier(.2,.8,.2,1) both; }
+  .motion-delay { animation-delay: .12s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes cursor-pulse { 50% { background: #c2d5c5; } }
+  @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+}
+
+@media (max-width: 880px) {
+  .app-header { grid-template-columns: auto 1fr auto; }
+  .stage-nav { display: flex; justify-self: center; }
+  .stage-step:not(.is-current), .stage-line { display: none; }
+  .header-actions { gap: .7rem; }
+  .volume-range { width: 54px; }
+  .import-composition { grid-template-columns: 1fr; gap: 2.5rem; padding-top: 4rem; }
+  .import-stage::before { inset: 0; }
+  .brand-title { font-size: clamp(4.8rem, 20vw, 8rem); }
+  .drop-zone { min-height: 340px; }
+  .mistake-item { grid-template-columns: auto 1fr auto; }
+  .mistake-context { grid-column: 2 / -1; grid-row: 2; }
+  .mistake-date { display: none; }
+}
+
+@media (max-width: 620px) {
+  .app-header { height: 62px; padding: 0 .9rem; }
+  .wordmark > span:last-child { display: none; }
+  .text-button { font-size: .75rem; }
+  .stage-panel { min-height: calc(100vh - 62px); }
+  .import-composition { min-height: calc(100vh - 62px); padding: 3rem 1rem; }
+  .hero-line { margin-top: 1.5rem; }
+  .drop-zone { min-height: 310px; padding: 2rem 1rem; }
+  .section-heading, .typing-topbar { align-items: flex-start; flex-direction: column; gap: 1rem; }
+  .document-preview { max-height: 58vh; padding: 1.5rem 1.2rem; }
+  .selection-bar { align-items: stretch; flex-direction: column; }
+  .selection-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .selection-actions .button { padding: .55rem; font-size: .7rem; }
+  .live-stats { grid-template-columns: repeat(2, 1fr); row-gap: .7rem; }
+  .live-stats div { justify-content: flex-start !important; border: 0; }
+  .typing-shell { min-height: 330px; }
+  .typing-passage { padding: 2rem 1.25rem; }
+  .session-controls { flex-wrap: wrap; }
+  .result-grid { grid-template-columns: repeat(2, 1fr); row-gap: 1.5rem; }
+  .result-grid div:nth-child(2) { border: 0; }
+  .result-actions { flex-direction: column; }
+  .dialog-header, .library-toolbar, .library-footer { padding-left: 1rem; padding-right: 1rem; }
+  .library-toolbar { align-items: flex-start; flex-direction: column; }
+  .library-toolbar > div { width: 100%; flex-wrap: wrap; }
+  .mistake-item { padding: 1rem; gap: .7rem; }
+  .mistake-count { font-size: .65rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</file>
+
+<file path="tests/fixtures/docx-fixture.js">
+import { strToU8, zipSync } from 'fflate';
+
+export function createDocxFixture() {
+  const files = {
+    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+        <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+        <Default Extension="xml" ContentType="application/xml"/>
+        <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+        <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+      </Types>`,
+    '_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+      </Relationships>`,
+    'word/_rels/document.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+      </Relationships>`,
+    'word/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>
+      </w:styles>`,
+    'word/document.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body>
+          <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Practice Notes</w:t></w:r></w:p>
+          <w:p><w:r><w:t>Type </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>carefully</w:t></w:r><w:r><w:t> every day.</w:t></w:r></w:p>
+          <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Word</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Count</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+          <w:sectPr/>
+        </w:body>
+      </w:document>`,
+  };
+  return zipSync(Object.fromEntries(Object.entries(files).map(([name, contents]) => [name, strToU8(contents)])));
+}
+
+export function fixtureFile(bytes, name, type) {
+  const copy = Uint8Array.from(bytes);
+  return {
+    name,
+    type,
+    size: copy.byteLength,
+    arrayBuffer: async () => copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength),
+  };
+}
+</file>
+
+<file path="tests/document-parser.test.js">
+import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { parseDocument, validateDocumentFile } from '../src/parsers/document-parser.js';
+import { createDocxFixture, fixtureFile } from './fixtures/docx-fixture.js';
+
+async function textFixture(name, type) {
+  const bytes = await readFile(new URL(`./fixtures/${name}`, import.meta.url));
+  return fixtureFile(bytes, name, type);
+}
+
+describe('document parsing', () => {
+  it('extracts TXT while preserving authored line breaks', async () => {
+    const result = await parseDocument(await textFixture('sample.txt', 'text/plain'));
+    expect(result.extension).toBe('txt');
+    expect(result.html).toContain('The first paragraph');
+    expect(result.html).toContain('\n\nThe second paragraph');
+    expect(result.approximateWords).toBeGreaterThan(10);
+  });
+
+  it('renders Markdown headings, emphasis, lists, links, and tables', async () => {
+    const result = await parseDocument(await textFixture('sample.md', 'text/markdown'));
+    expect(result.html).toContain('<h1>A Small Lesson</h1>');
+    expect(result.html).toContain('<strong>carefully</strong>');
+    expect(result.html).toContain('<ul>');
+    expect(result.html).toContain('<table>');
+    expect(result.html).toContain('rel="noopener noreferrer"');
+  });
+
+  it('extracts readable structure from a local DOCX fixture', async () => {
+    const bytes = createDocxFixture();
+    const result = await parseDocument(fixtureFile(bytes, 'notes.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'));
+    expect(result.html).toContain('<h1>Practice Notes</h1>');
+    expect(result.html).toContain('<strong>carefully</strong>');
+    expect(result.html).toContain('<table>');
+    expect(result.approximateWords).toBeGreaterThanOrEqual(7);
+  });
+
+  it('rejects empty, oversized, unsupported, and legacy DOC files clearly', () => {
+    expect(() => validateDocumentFile({ name: 'empty.txt', size: 0 })).toThrow(/empty/i);
+    expect(() => validateDocumentFile({ name: 'huge.md', size: 26 * 1024 * 1024 })).toThrow(/25 MB/i);
+    expect(() => validateDocumentFile({ name: 'slides.pdf', size: 10 })).toThrow(/\.txt/i);
+    expect(() => validateDocumentFile({ name: 'legacy.doc', size: 10 })).toThrow(/legacy Word \.doc/i);
+  });
+});
+</file>
+
+<file path="tests/keyboard-audio.test.js">
+import { describe, expect, it, vi } from 'vitest';
+import { KeyboardAudio, loadSoundPreferences } from '../src/audio/keyboard-audio.js';
+
+class MemoryStorage {
+  constructor(value = null) { this.value = value; }
+  getItem() { return this.value; }
+  setItem(_key, value) { this.value = value; }
+}
+
+function fakeAudioContext() {
+  const source = { connect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: null };
+  return {
+    state: 'running',
+    destination: {},
+    resume: vi.fn(),
+    close: vi.fn(),
+    createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(3) })),
+    createBufferSource: vi.fn(() => ({ ...source })),
+    createGain: vi.fn(() => ({ gain: { value: 0 }, connect: vi.fn() })),
+  };
+}
+
+describe('keyboard sound', () => {
+  it('uses safe defaults and recovers from malformed preferences', () => {
+    expect(loadSoundPreferences(new MemoryStorage('{bad'))).toEqual({ enabled: true, volume: 0.28 });
+    expect(loadSoundPreferences(new MemoryStorage(JSON.stringify({ enabled: false, volume: 5 })))).toEqual({ enabled: false, volume: 1 });
+  });
+
+  it('does not play before deliberate unlock or when disabled', async () => {
+    const context = fakeAudioContext();
+    const audio = new KeyboardAudio({
+      storage: new MemoryStorage(),
+      contextFactory: () => context,
+      assetLoader: async () => ({ sampleRate: 8000, samples: [0, 20, -10] }),
+    });
+    expect(audio.play()).toBe(false);
+    expect(await audio.unlock()).toBe(true);
+    expect(audio.play()).toBe(true);
+    expect(context.createBufferSource).toHaveBeenCalledOnce();
+    audio.setEnabled(false);
+    expect(audio.play()).toBe(false);
+  });
+
+  it('saves volume and enabled preferences', () => {
+    const storage = new MemoryStorage();
+    const audio = new KeyboardAudio({ storage });
+    audio.setVolume(0.42);
+    audio.setEnabled(false);
+    expect(JSON.parse(storage.value)).toEqual({ enabled: false, volume: 0.42 });
+  });
+});
+</file>
+
+<file path="tests/mistake-store.test.js">
+import { describe, expect, it } from 'vitest';
+import { buildMistakePractice, MISTAKE_STORAGE_KEY, MistakeStore } from '../src/storage/mistake-store.js';
+
+class MemoryStorage {
+  constructor(initial = {}) { this.values = new Map(Object.entries(initial)); }
+  getItem(key) { return this.values.get(key) ?? null; }
+  setItem(key, value) { this.values.set(key, value); }
+  removeItem(key) { this.values.delete(key); }
+}
+
+describe('mistake history', () => {
+  it('deduplicates display variants and retains the learning signal', () => {
+    const storage = new MemoryStorage();
+    const store = new MistakeStore({ storage, now: () => new Date('2025-01-01T00:00:00Z') });
+    store.recordMistake({ word: 'Practice', context: 'Daily Practice helps.', sessionId: 'one' });
+    store.recordMistake({ word: 'practice', context: 'practice again', sessionId: 'one' });
+    store.recordMistake({ word: 'PRACTICE', context: 'PRACTICE later', sessionId: 'two' });
+    expect(store.list()).toEqual([expect.objectContaining({ display: 'Practice', mistakeCount: 3, sessionCount: 2 })]);
+  });
+
+  it('migrates a version 1 array', () => {
+    const old = { version: 1, words: [{ word: "Don't", count: 4, sessions: 2, context: 'Do not stop.', lastPracticed: '2024-01-01T00:00:00Z' }] };
+    const store = new MistakeStore({ storage: new MemoryStorage({ [MISTAKE_STORAGE_KEY]: JSON.stringify(old) }) });
+    expect(store.list()[0]).toMatchObject({ key: "don't", mistakeCount: 4, sessionCount: 2 });
+  });
+
+  it('recovers from malformed storage safely', () => {
+    const storage = new MemoryStorage({ [MISTAKE_STORAGE_KEY]: '{broken' });
+    const store = new MistakeStore({ storage });
+    expect(store.list()).toEqual([]);
+    expect(storage.getItem(MISTAKE_STORAGE_KEY)).toBeNull();
+  });
+
+  it('exports, imports, merges, and rejects invalid JSON', () => {
+    const source = new MistakeStore({ storage: new MemoryStorage() });
+    source.recordMistake({ word: 'co-operate', context: 'We co-operate.', sessionId: 'one' });
+    const target = new MistakeStore({ storage: new MemoryStorage() });
+    target.importJSON(source.exportJSON());
+    expect(target.list()[0]).toMatchObject({ display: 'co-operate', mistakeCount: 1 });
+    expect(() => target.importJSON('{nope')).toThrow(/valid JSON/i);
+    expect(() => target.importJSON('{"version":99,"words":{}}')).toThrow(/not a supported/i);
+  });
+
+  it('weights repeated mistakes with a finite cap', () => {
+    const text = buildMistakePractice([
+      { display: 'steady', mistakeCount: 20 },
+      { display: 'rhythm', mistakeCount: 1 },
+    ]);
+    expect(text.match(/steady/g)).toHaveLength(3);
+    expect(text.match(/rhythm/g)).toHaveLength(1);
+    expect(text.split(/\s+/)).toHaveLength(4);
+  });
+});
+</file>
+
+<file path="tests/sanitizer.test.js">
+import { describe, expect, it } from 'vitest';
+import { sanitizeDocumentHTML } from '../src/security/sanitizer.js';
+
+describe('document HTML sanitization', () => {
+  it('removes scripts and event handlers', () => {
+    const clean = sanitizeDocumentHTML('<p onclick="alert(1)">Keep</p><script>alert(2)</script><img src="x" onerror="alert(3)">');
+    expect(clean).toContain('Keep');
+    expect(clean).not.toMatch(/script|onclick|onerror/i);
+  });
+
+  it('removes unsafe links and hardens safe links', () => {
+    const clean = sanitizeDocumentHTML('<a href="javascript:alert(1)">bad</a><a href="https://example.com">safe</a>');
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = clean;
+    const [bad, safe] = wrapper.querySelectorAll('a');
+    expect(bad.hasAttribute('href')).toBe(false);
+    expect(safe.getAttribute('href')).toBe('https://example.com');
+    expect(safe.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(safe.getAttribute('target')).toBe('_blank');
+  });
+
+  it('blocks remote image requests but retains embedded data images', () => {
+    const clean = sanitizeDocumentHTML('<img alt="remote" src="https://tracker.test/pixel"><img alt="local" src="data:image/png;base64,AAAA">');
+    expect(clean).toContain('remote');
+    expect(clean).not.toContain('tracker.test');
+    expect(clean).toContain('data:image/png;base64,AAAA');
+  });
+});
+</file>
+
+<file path="tests/setup.js">
+import { afterEach } from 'vitest';
+
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+});
+</file>
+
+<file path="tests/text.test.js">
+import { describe, expect, it } from 'vitest';
+import {
+  extractSelectionText,
+  findWords,
+  nodeToPracticeText,
+  normalizeWordKey,
+  wordAtCharacter,
+} from '../src/core/text.js';
+
+describe('selection cleanup and word boundaries', () => {
+  it('preserves paragraph and explicit line breaks', () => {
+    const root = document.createElement('article');
+    root.innerHTML = '<h1>Heading</h1><p>First line<br>Second line</p><p>Next paragraph</p>';
+    expect(nodeToPracticeText(root)).toBe('Heading\n\nFirst line\nSecond line\n\nNext paragraph');
+  });
+
+  it('extracts an arbitrary selection only from the preview', () => {
+    const root = document.createElement('article');
+    root.innerHTML = '<p>Alpha bravo.</p><p>Charlie delta.</p>';
+    document.body.append(root);
+    const range = document.createRange();
+    range.setStart(root.firstElementChild.firstChild, 6);
+    range.setEnd(root.lastElementChild.firstChild, 7);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    expect(extractSelectionText(selection, root)).toBe('bravo.\n\nCharlie');
+  });
+
+  it('maps Unicode, apostrophe, and hyphenated words', () => {
+    const text = "L'été co-operate re‑enter 東京42 stop.";
+    expect(findWords(text).map(({ word }) => word)).toEqual(["L'été", 'co-operate', 're‑enter', '東京42', 'stop']);
+    expect(wordAtCharacter(text, 2)?.word).toBe("L'été");
+    expect(wordAtCharacter(text, 9)?.word).toBe('co-operate');
+    expect(wordAtCharacter(text, 5)).toBeNull();
+    expect(wordAtCharacter(text, Array.from(text).length - 1)).toBeNull();
+  });
+
+  it('normalizes only the deduplication key', () => {
+    expect(normalizeWordKey('Re-Enter')).toBe('re-enter');
+    expect(normalizeWordKey('DON’T')).toBe("don't");
+  });
+});
+</file>
+
+<file path="tests/typing-session.test.js">
+import { describe, expect, it } from 'vitest';
+import { calculateStatistics } from '../src/core/statistics.js';
+import { keyboardInputFromEvent, TypingSession } from '../src/core/typing-session.js';
+
+describe('typing session engine', () => {
+  it('matches characters, keeps mistakes after Backspace, and completes exactly', () => {
+    let clock = 0;
+    const session = new TypingSession('ab', { now: () => clock });
+    session.start();
+    expect(session.evaluate('x')).toMatchObject({ correct: false, index: 0 });
+    expect(session.errorCount).toBe(1);
+    expect(session.backspace()).toBe(true);
+    expect(session.evaluations[0]).toBeNull();
+    expect(session.errorCount).toBe(1);
+    session.evaluate('a');
+    expect(session.status).toBe('running');
+    clock = 1000;
+    session.evaluate('b');
+    expect(session.status).toBe('completed');
+    expect(session.statistics().progress).toBe(100);
+  });
+
+  it('pauses, resumes, excludes paused time, and restarts', () => {
+    let clock = 0;
+    const session = new TypingSession('abc', { now: () => clock });
+    session.start();
+    session.evaluate('a');
+    clock = 1000;
+    session.pause();
+    clock = 6000;
+    expect(session.evaluate('b')).toBeNull();
+    session.resume();
+    clock = 7000;
+    session.evaluate('b');
+    expect(session.elapsedMs()).toBe(2000);
+    session.restart();
+    expect(session.snapshot()).toMatchObject({ status: 'idle', cursor: 0, errorCount: 0, started: false });
+  });
+
+  it('starts timing on the first evaluated keystroke', () => {
+    let clock = 5000;
+    const session = new TypingSession('a', { now: () => clock });
+    session.start();
+    clock = 8000;
+    expect(session.elapsedMs()).toBe(0);
+    session.evaluate('a');
+    expect(session.elapsedMs()).toBe(0);
+  });
+
+  it('accepts printable Unicode and line breaks but ignores shortcuts', () => {
+    expect(keyboardInputFromEvent({ key: 'é', ctrlKey: false, metaKey: false, altKey: false })).toBe('é');
+    expect(keyboardInputFromEvent({ key: 'Enter', ctrlKey: false, metaKey: false, altKey: false })).toBe('\n');
+    expect(keyboardInputFromEvent({ key: 'Tab', ctrlKey: false, metaKey: false, altKey: false })).toBe('\t');
+    expect(keyboardInputFromEvent({ key: 'v', ctrlKey: true, metaKey: false, altKey: false })).toBeNull();
+    expect(keyboardInputFromEvent({ key: 'Shift', ctrlKey: false, metaKey: false, altKey: false })).toBeNull();
+  });
+});
+
+describe('statistics formulas', () => {
+  it('uses correct characters divided by five per elapsed minute', () => {
+    const stats = calculateStatistics({ correctKeystrokes: 250, evaluatedKeystrokes: 300, cursor: 300, totalCharacters: 600, elapsedMs: 60000 });
+    expect(stats.wpm).toBe(50);
+    expect(stats.accuracy).toBeCloseTo(83.333, 2);
+    expect(stats.progress).toBe(50);
+  });
+
+  it('handles zero time and no evaluated keys without Infinity or NaN', () => {
+    expect(calculateStatistics({ elapsedMs: 0 })).toMatchObject({ wpm: 0, accuracy: 100, progress: 0 });
+  });
+});
+</file>
+
+<file path="index.html">
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Turn your own documents into private, focused typing practice.">
+    <meta name="theme-color" content="#f5f1e8">
+    <title>Margin - document typing practice</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="/src/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="app-header" aria-label="Application header">
+      <button class="wordmark" id="homeButton" type="button" aria-label="Margin home">
+        <span class="wordmark-mark" aria-hidden="true">M</span>
+        <span>Margin</span>
+      </button>
+
+      <nav class="stage-nav" aria-label="Practice stages">
+        <span class="stage-step is-current" data-stage-marker="import"><b>1</b> Import</span>
+        <span class="stage-line" aria-hidden="true"></span>
+        <span class="stage-step" data-stage-marker="read"><b>2</b> Select</span>
+        <span class="stage-line" aria-hidden="true"></span>
+        <span class="stage-step" data-stage-marker="type"><b>3</b> Type</span>
+      </nav>
+
+      <div class="header-actions">
+        <button class="text-button" id="openLibraryButton" type="button">
+          Mistakes <span class="count-badge" id="mistakeBadge" aria-label="0 saved mistake words">0</span>
+        </button>
+        <div class="sound-menu" id="soundMenu">
+          <button class="icon-button" id="soundToggle" type="button" aria-pressed="true" aria-label="Turn key sound off">
+            <span class="sound-glyph" aria-hidden="true"></span>
+          </button>
+          <label class="volume-label" for="volumeRange">Key sound volume</label>
+          <input id="volumeRange" class="volume-range" type="range" min="0" max="100" value="28">
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="stage-panel import-stage is-active" id="importStage" aria-labelledby="importTitle">
+        <div class="import-composition">
+          <div class="import-copy motion-rise">
+            <p class="kicker">Your words. Your rhythm.</p>
+            <h1 id="importTitle" class="brand-title">Margin</h1>
+            <p class="hero-line">Practice typing with writing you actually want to read.</p>
+            <p class="hero-support">Import a document, choose any passage, and build a private practice routine around the words that slow you down.</p>
+          </div>
+
+          <div class="upload-panel motion-rise motion-delay">
+            <input id="fileInput" class="visually-hidden" type="file" accept=".txt,.md,.docx,.doc,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword">
+            <label class="drop-zone" id="dropZone" for="fileInput" tabindex="0">
+              <span class="document-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="drop-title">Drop a document here</span>
+              <span class="drop-divider">or</span>
+              <span class="button button-primary">Choose a file</span>
+              <span class="drop-help">TXT, Markdown, or DOCX up to 25 MB</span>
+            </label>
+
+            <div class="parse-status" id="parseStatus" hidden aria-live="polite">
+              <span class="status-spinner" id="parseSpinner" aria-hidden="true"></span>
+              <div>
+                <strong id="parseStatusTitle">Reading your document</strong>
+                <p id="parseStatusMessage">Keeping everything on this device.</p>
+              </div>
+            </div>
+
+            <div class="privacy-note">
+              <span class="privacy-lock" aria-hidden="true"></span>
+              <p><strong>Private by design.</strong> Documents are parsed in this browser and are never uploaded or saved. Only your mistake-word history is stored locally.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="stage-panel read-stage" id="readStage" aria-labelledby="readTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="kicker">Read and select</p>
+            <h1 id="readTitle">Choose your passage</h1>
+            <p>Select text directly in the document, or practice everything.</p>
+          </div>
+          <button class="text-button subtle" id="replaceDocumentButton" type="button">Choose another document</button>
+        </div>
+
+        <div class="document-meta" aria-label="Imported document details">
+          <span class="file-type" id="fileType">TXT</span>
+          <div class="file-identity">
+            <strong id="fileName">Document.txt</strong>
+            <span id="fileStats">0 words · 0 characters</span>
+          </div>
+          <span class="success-label"><i aria-hidden="true"></i> Ready</span>
+        </div>
+
+        <article class="document-preview" id="documentPreview" aria-label="Document preview; select text here" tabindex="0"></article>
+
+        <aside class="selection-bar" aria-label="Practice selection controls">
+          <div class="selection-summary" id="selectionSummary" aria-live="polite">
+            <span class="selection-dot" aria-hidden="true"></span>
+            <div><strong>No text selected</strong><span>Drag across any text in the preview</span></div>
+          </div>
+          <div class="selection-actions">
+            <button class="button button-secondary" id="practiceAllButton" type="button">Practice entire document</button>
+            <button class="button button-primary" id="practiceSelectionButton" type="button" disabled>Practice selection</button>
+          </div>
+        </aside>
+        <p class="advisory" id="lengthAdvisory" hidden></p>
+      </section>
+
+      <section class="stage-panel type-stage" id="typeStage" aria-labelledby="typeTitle" hidden>
+        <div class="typing-topbar">
+          <div>
+            <p class="kicker" id="sessionKicker">Typing session</p>
+            <h1 id="typeTitle">Find your rhythm</h1>
+          </div>
+          <button class="text-button subtle" id="backToDocumentButton" type="button">Back to document</button>
+        </div>
+
+        <div class="live-stats" aria-label="Live typing statistics">
+          <div><span>Progress</span><strong id="progressValue">0%</strong></div>
+          <div><span>Time</span><strong id="timeValue">0:00</strong></div>
+          <div><span>WPM</span><strong id="wpmValue">0</strong></div>
+          <div><span>Accuracy</span><strong id="accuracyValue">100%</strong></div>
+        </div>
+        <div class="progress-track" role="progressbar" aria-label="Typing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progressBar"></span></div>
+
+        <div class="typing-shell">
+          <div class="session-overlay" id="sessionOverlay">
+            <span class="eyebrow" id="overlayEyebrow">Ready when you are</span>
+            <strong id="overlayTitle">Start with one deliberate keystroke.</strong>
+            <p id="overlayMessage">The timer begins only after you type the first character.</p>
+            <button class="button button-primary" id="overlayActionButton" type="button">Start session</button>
+          </div>
+          <div class="typing-passage" id="typingPassage" tabindex="0" role="textbox" aria-readonly="true" aria-multiline="true" aria-label="Typing passage. Press Start, then type the highlighted text." aria-describedby="typingHint"></div>
+        </div>
+
+        <p class="typing-hint" id="typingHint"><kbd>Backspace</kbd> to revisit a character <span aria-hidden="true">·</span> Paste is disabled during practice</p>
+        <div class="session-controls" aria-label="Session controls">
+          <button class="button button-primary" id="startPauseButton" type="button">Start</button>
+          <button class="button button-secondary" id="restartButton" type="button">Restart</button>
+          <button class="text-button danger" id="endSessionButton" type="button">End session</button>
+        </div>
+
+        <section class="results" id="resultsPanel" aria-labelledby="resultsTitle" hidden>
+          <p class="kicker" id="resultsKicker">Session complete</p>
+          <h2 id="resultsTitle">A little smoother than before.</h2>
+          <p id="resultsLead">Your finished session is summarized below.</p>
+          <div class="result-grid">
+            <div><strong id="resultWpm">0</strong><span>WPM</span></div>
+            <div><strong id="resultAccuracy">100%</strong><span>Accuracy</span></div>
+            <div><strong id="resultTime">0:00</strong><span>Elapsed</span></div>
+            <div><strong id="resultErrors">0</strong><span>Errors</span></div>
+          </div>
+          <div class="missed-words" id="missedWords"></div>
+          <div class="result-actions">
+            <button class="button button-primary" id="tryAgainButton" type="button">Try this passage again</button>
+            <button class="button button-secondary" id="resultLibraryButton" type="button">Review mistakes</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <dialog class="library-dialog" id="libraryDialog" aria-labelledby="libraryTitle">
+      <div class="dialog-header">
+        <div>
+          <p class="kicker">Personal review</p>
+          <h1 id="libraryTitle">Mistake Library</h1>
+          <p>Words stay on this device until you remove them.</p>
+        </div>
+        <button class="close-button" id="closeLibraryButton" type="button" aria-label="Close mistake library">Close</button>
+      </div>
+
+      <div class="library-toolbar">
+        <label class="select-all"><input type="checkbox" id="selectAllMistakes"> Select all</label>
+        <div>
+          <button class="button button-primary button-small" id="practiceMistakesButton" type="button" disabled>Practice mistakes</button>
+          <button class="text-button" id="exportMistakesButton" type="button">Export JSON</button>
+          <label class="text-button file-label" for="importMistakesInput">Import JSON</label>
+          <input class="visually-hidden" id="importMistakesInput" type="file" accept="application/json,.json">
+        </div>
+      </div>
+
+      <div class="library-empty" id="libraryEmpty">
+        <span class="empty-rings" aria-hidden="true"></span>
+        <h2>No saved words yet</h2>
+        <p>Words you miss during a session will collect here for focused practice.</p>
+      </div>
+      <div class="mistake-list" id="mistakeList" aria-live="polite"></div>
+      <div class="library-footer">
+        <span id="libraryCount">0 saved words</span>
+        <button class="text-button danger" id="clearHistoryButton" type="button" disabled>Clear history</button>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="confirmDialog" aria-labelledby="confirmTitle">
+      <h2 id="confirmTitle">Are you sure?</h2>
+      <p id="confirmMessage"></p>
+      <div>
+        <button class="button button-secondary" id="confirmCancel" type="button">Cancel</button>
+        <button class="button button-danger" id="confirmAccept" type="button">Continue</button>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+    <div class="visually-hidden" id="sessionAnnouncements" aria-live="assertive" aria-atomic="true"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+</file>
+
+<file path="package.json">
+{
+  "name": "margin-document-typing",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "mammoth": "^1.9.1",
+    "marked": "^15.0.12"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.2",
+    "jsdom": "^26.1.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.4"
+  }
+}
+</file>
+
+<file path="README.md">
+# Margin
+
+Margin is a private, document-based typing practice application. Import a TXT, Markdown, or DOCX file, select any readable passage, and type against the unchanged source text. Mistyped target words are saved locally for focused review.
+
+## Setup
+
+Requirements: Node.js 20 or newer and npm 10 or newer.
+
+```bash
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite, normally `http://localhost:5173`.
+
+## Commands
+
+```bash
+npm run dev          # Start the Vite development server
+npm test             # Run the Vitest suite once
+npm run test:watch   # Run tests in watch mode
+npm run build        # Create a production build in dist/
+npm run preview      # Serve the production build locally
+```
+
+## Supported Documents
+
+- `.txt`: decoded as UTF-8 first, with a Windows-1252 fallback. Authored paragraphs and line breaks are retained.
+- `.md`: rendered with Marked using GitHub-Flavored Markdown support for headings, paragraphs, lists, emphasis, links, code blocks, and tables.
+- `.docx` (including the `.dox` typo in the original request): converted to clean semantic HTML by Mammoth. Headings, paragraphs, lists, inline emphasis, tables, and supported embedded images are retained as readable content.
+- `.doc`: recognized but not parsed. Legacy DOC is a different binary format and is not supported by Mammoth's DOCX parser. Margin asks the user to save or convert it to DOCX, Markdown, or TXT. Reliable full DOC support would require a separate conversion service or a substantially different browser conversion dependency, which is intentionally outside the local-only architecture.
+
+Margin preserves meaningful readable structure, not pixel-perfect Microsoft Word page layout. Files larger than 25 MB, empty files, corrupt or password-protected DOCX files, and documents without usable text produce actionable errors.
+
+## Security And Privacy
+
+Document bytes are processed entirely in the browser and are not uploaded. The imported document and typing sessions are not written to browser storage. Replacing a document clears its preview and session state.
+
+Generated Markdown and DOCX HTML passes through DOMPurify before insertion. Scripts, event-handler attributes, forms, embedded browsing contexts, unsafe protocols, and remote images are removed. Supported DOCX embedded images use local data URIs. External links are hardened with `noopener noreferrer` and open only after the user activates them.
+
+Only mistake-word records and sound preferences use `localStorage`. Mistake records contain the target word, mistake count, session count, last-practiced date, and a short nearby context. Users can remove one word, clear all records, or export/import the versioned JSON schema.
+
+## Typing Rules
+
+1. Select **Start** to arm the session. Timing begins on the first evaluated printable keystroke, not when the session opens.
+2. Printable Unicode input, spaces, punctuation, Enter for source line breaks, and Tab for table-cell separators are evaluated exactly against the source.
+3. A correct or incorrect printable key advances one source character. Backspace revisits the preceding character, but it does not erase an already recorded mistake from the learning history or cumulative keystroke metrics.
+4. Paste, modifier-only keys, and keyboard shortcuts are not evaluated. A paste attempt is blocked and announced accessibly.
+5. Pause excludes paused time. Resume continues the same session. Restart clears current metrics but keeps mistake history. End Session reports the partial result.
+6. Completion and 100% progress appear only after every source character has been evaluated under these rules.
+
+Statistics use these formulas:
+
+- `WPM = correct evaluated keystrokes / 5 / elapsed minutes`
+- `Accuracy = correct evaluated keystrokes / total evaluated keystrokes * 100`
+- `Progress = current source position / total source characters * 100`
+
+Zero elapsed time produces 0 WPM. Before any evaluated keystroke, accuracy is shown as 100% because there are no errors to evaluate.
+
+## Mistake Practice
+
+When an incorrect character falls inside a Unicode letter/number word, Margin stores the target word rather than the typed spelling. Word matching includes combining marks, internal straight or curly apostrophes, and hyphenated segments. Standalone whitespace and punctuation never create blank records.
+
+The Mistake Library can practice any checked words; **Select all** creates an all-words session. Every selected word appears once. Words with repeated mistakes receive up to two extra repetitions; extra weighting stops once a normal practice set reaches 120 words, while unusually large selections still keep every selected word.
+
+The persisted schema is currently version 2. Missing, malformed, array-based legacy, and version 1 data are handled safely. Imported valid records merge with local counts.
+
+## Keyboard Sound
+
+Typing audio is enabled by default at 28% volume and can be changed in the header. Audio is unlocked only by a deliberate Start or sound-control interaction to comply with browser autoplay policies. The local PCM asset is decoded into a Web Audio buffer and uses limited polyphony so quick typing does not cut off every click or create unbounded overlap. Correct and incorrect evaluated printable keys use the same sound.
+
+Asset details and licensing are in [`public/assets/audio/README.md`](public/assets/audio/README.md). The click is an original CC0 waveform created for this project; no external audio is hotlinked.
+
+## Architecture
+
+- `src/parsers/document-parser.js`: validation, encoding, TXT/Markdown/DOCX extraction
+- `src/security/sanitizer.js`: DOMPurify policy and safe link/image post-processing
+- `src/core/text.js`: selection cleanup, paragraph extraction, Unicode word mapping
+- `src/core/typing-session.js`: explicit session state and character evaluation
+- `src/core/statistics.js`: WPM, accuracy, progress, and elapsed formatting
+- `src/storage/mistake-store.js`: schema migration, persistence, import/export, weighted practice
+- `src/audio/keyboard-audio.js`: preference storage, audio unlock, decoding, and playback gating
+- `src/main.js`: DOM rendering, user flow, accessibility announcements, and event wiring
+
+The application uses semantic HTML, local CSS, and modular vanilla JavaScript. Vite bundles application dependencies for production. The interface remains functional without utility CSS; the Tailwind browser script present in the HTML is not used by application code.
+
+## Tests
+
+The Vitest suite covers TXT, Markdown, and generated local DOCX fixtures; hostile HTML sanitization; selection and paragraph cleanup; typing state transitions and metrics; Unicode word mapping; mistake schema behavior; and sound preference/playback gating.
+
+The DOCX fixture is generated locally from minimal, non-copyrighted Open XML parts in `tests/fixtures/docx-fixture.js`. TXT and Markdown fixtures are original test prose.
+</file>
+
+<file path="vite.config.js">
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  build: {
+    target: 'es2022',
+    sourcemap: true,
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./tests/setup.js'],
+    coverage: {
+      reporter: ['text', 'html'],
+    },
+  },
+});
+</file>
+
+</files>
