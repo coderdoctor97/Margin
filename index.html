@@ -18,11 +18,11 @@
       </button>
 
       <nav class="stage-nav" aria-label="Practice stages">
-        <span class="stage-step is-current" data-stage-marker="import"><b>1</b> Import</span>
+        <span class="stage-step is-current" data-stage-marker="import"><span class="stage-step-number">1</span> Import</span>
         <span class="stage-line" aria-hidden="true"></span>
-        <span class="stage-step" data-stage-marker="read"><b>2</b> Select</span>
+        <span class="stage-step" data-stage-marker="read"><span class="stage-step-number">2</span> Select</span>
         <span class="stage-line" aria-hidden="true"></span>
-        <span class="stage-step" data-stage-marker="type"><b>3</b> Type</span>
+        <span class="stage-step" data-stage-marker="type"><span class="stage-step-number">3</span> Type</span>
       </nav>
 
       <div class="header-actions">
@@ -33,7 +33,7 @@
           <button class="icon-button" id="soundToggle" type="button" aria-pressed="true" aria-label="Turn key sound off">
             <span class="sound-glyph" aria-hidden="true"></span>
           </button>
-          <label class="volume-label" for="volumeRange">Key sound volume</label>
+          <label class="visually-hidden" for="volumeRange">Key sound volume</label>
           <input id="volumeRange" class="volume-range" type="range" min="0" max="100" value="28">
         </div>
       </div>
@@ -50,7 +50,7 @@
           </div>
 
           <div class="upload-panel motion-rise motion-delay">
-            <input id="fileInput" class="visually-hidden" type="file" accept=".txt,.md,.docx,.doc,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword">
+            <input id="fileInput" class="visually-hidden file-input" type="file" accept=".txt,.md,.docx,.doc,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword">
             <label class="drop-zone" id="dropZone" for="fileInput" tabindex="0">
               <span class="document-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
               <span class="drop-title">Drop a document here</span>
@@ -68,8 +68,7 @@
             </div>
 
             <div class="privacy-note">
-              <span class="privacy-lock" aria-hidden="true"></span>
-              <p><strong>Private by design.</strong> Documents are parsed in this browser and are never uploaded or saved. Only your mistake-word history is stored locally.</p>
+                <p><strong>Private by design.</strong> Documents are parsed in this browser and are never uploaded or saved. Only your mistake-word history is stored locally.</p>
             </div>
           </div>
         </div>
@@ -91,19 +90,18 @@
             <strong id="fileName">Document.txt</strong>
             <span id="fileStats">0 words · 0 characters</span>
           </div>
-          <span class="success-label"><i aria-hidden="true"></i> Ready</span>
         </div>
 
         <article class="document-preview" id="documentPreview" aria-label="Document preview; select text here" tabindex="0"></article>
 
-        <aside class="selection-bar" aria-label="Practice selection controls">
+        <aside class="selection-bar" id="selectionBar" aria-label="Practice selection controls">
           <div class="selection-summary" id="selectionSummary" aria-live="polite">
             <span class="selection-dot" aria-hidden="true"></span>
             <div><strong>No text selected</strong><span>Drag across any text in the preview</span></div>
           </div>
           <div class="selection-actions">
             <button class="button button-secondary" id="practiceAllButton" type="button">Practice entire document</button>
-            <button class="button button-primary" id="practiceSelectionButton" type="button" disabled>Practice selection</button>
+            <button class="button button-primary button-dormant" id="practiceSelectionButton" type="button" disabled aria-disabled="true">Practice selection</button>
           </div>
         </aside>
         <p class="advisory" id="lengthAdvisory" hidden></p>
@@ -175,10 +173,10 @@
       <div class="library-toolbar">
         <label class="select-all"><input type="checkbox" id="selectAllMistakes"> Select all</label>
         <div>
-          <button class="button button-primary button-small" id="practiceMistakesButton" type="button" disabled>Practice mistakes</button>
+          <button class="button button-primary button-small button-dormant" id="practiceMistakesButton" type="button" disabled aria-disabled="true">Practice mistakes</button>
           <button class="text-button" id="exportMistakesButton" type="button">Export JSON</button>
           <label class="text-button file-label" for="importMistakesInput">Import JSON</label>
-          <input class="visually-hidden" id="importMistakesInput" type="file" accept="application/json,.json">
+          <input class="visually-hidden file-input" id="importMistakesInput" type="file" accept="application/json,.json">
         </div>
       </div>
 

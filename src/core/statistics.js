@@ -7,7 +7,9 @@ export function calculateStatistics({
 } = {}) {
   const safeElapsed = Math.max(0, Number(elapsedMs) || 0);
   const elapsedMinutes = safeElapsed / 60000;
-  const wpm = elapsedMinutes > 0 ? (correctKeystrokes / 5) / elapsedMinutes : 0;
+  // Extrapolating a rate from a fraction of a second produces absurd numbers (34
+  // keystrokes at 0.4s reads ~1000 WPM). Report nothing until a second has elapsed.
+  const wpm = safeElapsed >= 1000 ? (correctKeystrokes / 5) / elapsedMinutes : 0;
   const accuracy = evaluatedKeystrokes > 0
     ? (correctKeystrokes / evaluatedKeystrokes) * 100
     : 100;

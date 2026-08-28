@@ -30,6 +30,7 @@ const elements = {
   fileName: $('#fileName'),
   fileStats: $('#fileStats'),
   documentPreview: $('#documentPreview'),
+  selectionBar: $('#selectionBar'),
   selectionSummary: $('#selectionSummary'),
   lengthAdvisory: $('#lengthAdvisory'),
   practiceAllButton: $('#practiceAllButton'),
@@ -87,7 +88,8 @@ const elements = {
 
 const mistakeStore = new MistakeStore();
 const keyboardAudio = new KeyboardAudio();
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Live query: `matches` is read at each use so an OS motion change mid-session is respected.
+const reducedMotionQuery = matchMedia('(prefers-reduced-motion: reduce)');
 const stageOrder = ['import', 'read', 'type'];
 
 const app = {
@@ -108,6 +110,20 @@ const app = {
   parseRequest: 0,
 };
 
+const stageFocusTarget = {
+  import: () => elements.dropZone,
+  read: () => elements.documentPreview,
+  type: () => (elements.sessionOverlay.classList.contains('is-hidden') ? elements.typingPassage : elements.overlayActionButton),
+};
+
+// A stage swap moves focus into the new panel's primary control, but never yanks focus
+// away from an element that is already inside the stage being shown.
+function focusActiveStage(stage) {
+  const panel = elements.stages[stage];
+  if (panel.contains(document.activeElement)) return;
+  stageFocusTarget[stage]?.()?.focus({ preventScroll: true });
+}
+
 function showStage(stage) {
   app.stage = stage;
   Object.entries(elements.stages).forEach(([name, panel]) => {
@@ -122,7 +138,7 @@ function showStage(stage) {
     if (index === activeIndex) marker.setAttribute('aria-current', 'step');
     else marker.removeAttribute('aria-current');
   });
-  // Remove the window.scrollTo call — CSS .stage-panel transition handles the crossfade.
+  focusActiveStage(stage);
 }
 
 function announce(message) {
@@ -132,24 +148,33 @@ function announce(message) {
 
 function showToast(message, duration = 3800) {
   clearTimeout(app.toastId);
+  elements.toast.classList.remove('is-leaving');
   elements.toast.textContent = message;
   elements.toast.hidden = false;
-  app.toastId = setTimeout(() => { elements.toast.hidden = true; }, duration);
+  app.toastId = setTimeout(() => {
+    elements.toast.classList.add('is-leaving');
+    app.toastId = setTimeout(() => {
+      elements.toast.hidden = true;
+      elements.toast.classList.remove('is-leaving');
+    }, 170);
+  }, duration);
 }
 
 function setParseStatus(type, title, message) {
   elements.parseStatus.hidden = false;
-  elements.parseStatus.className = `parse-status${type ? ` is-${type}` : ''}`;
+  elements.parseStatus.classList.toggle('is-error', type === 'error');
+  elements.parseStatus.classList.toggle('is-success', type === 'success');
   elements.parseStatusTitle.textContent = title;
   elements.parseStatusMessage.textContent = message;
 }
 
 function clearParseStatus() {
   elements.parseStatus.hidden = true;
-  elements.parseStatus.className = 'parse-status';
+  elements.parseStatus.classList.remove('is-error', 'is-success');
 }
 
 function resetSession() {
+  elements.stages.type.classList.remove('is-ended');
   clearInterval(app.timerId);
   app.timerId = null;
   app.session = null;
@@ -176,10 +201,12 @@ function resetDocument() {
   elements.dropZone.removeAttribute('aria-busy');
 }
 
-async function confirmAction({ title, message, action = 'Continue' }) {
+async function confirmAction({ title, message, action = 'Continue', tone = 'danger' }) {
   elements.confirmTitle.textContent = title;
   elements.confirmMessage.textContent = message;
   elements.confirmAccept.textContent = action;
+  elements.confirmAccept.classList.toggle('button-danger', tone === 'danger');
+  elements.confirmAccept.classList.toggle('button-primary', tone !== 'danger');
   elements.confirmDialog.showModal();
   return new Promise((resolve) => {
     const finish = (answer) => {
@@ -208,6 +235,7 @@ async function requestNewDocument() {
       title: 'Choose another document?',
       message: 'The current preview and typing session will be cleared. Saved mistake words will stay in your library.',
       action: 'Clear document',
+      tone: 'primary',
     });
     if (!approved) return;
   }
@@ -218,6 +246,7 @@ async function requestNewDocument() {
 
 async function handleFile(file) {
   if (!file) return;
+  elements.fileInput.value = '';
   resetDocument();
   const parseRequest = ++app.parseRequest;
   showStage('import');
@@ -265,7 +294,8 @@ function updateSelectionUI(text) {
   const valid = isMeaningfulText(text) && words > 0;
   app.selectedText = valid ? text : '';
   elements.practiceSelectionButton.disabled = !valid;
-  elements.selectionSummary.classList.toggle('has-selection', valid);
+  elements.selectionBar.classList.toggle('has-selection', valid);
+  elements.practiceSelectionButton.setAttribute('aria-disabled', String(!valid));
   elements.selectionSummary.querySelector('strong').textContent = valid
     ? `${words.toLocaleString()} word${words === 1 ? '' : 's'} selected`
     : 'No text selected';
@@ -320,7 +350,7 @@ function keepCurrentVisible() {
   const container = elements.typingPassage;
   const targetTop = current.offsetTop - container.clientHeight * 0.42;
   if (Math.abs(container.scrollTop - targetTop) > container.clientHeight * 0.25) {
-    container.scrollTo({ top: Math.max(0, targetTop), behavior: reducedMotion ? 'auto' : 'smooth' });
+    container.scrollTo({ top: Math.max(0, targetTop), behavior: reducedMotionQuery.matches ? 'auto' : 'smooth' });
   }
 }
 
@@ -353,6 +383,7 @@ function setOverlay(mode) {
 }
 
 function beginTypingSession(text, { kind = 'document', practiceWords = [] } = {}) {
+  elements.stages.type.classList.remove('is-ended');
   if (!isMeaningfulText(text) || countWords(text) === 0) {
     showToast('Choose a passage that contains at least one readable word.');
     return;
@@ -386,6 +417,7 @@ async function requestTypingSession(text, options = {}) {
       title: 'Start a long practice session?',
       message: `This passage contains ${characters.toLocaleString()} characters. Rendering and scrolling may be slower on some devices, but nothing will be truncated.`,
       action: 'Start full passage',
+      tone: 'primary',
     });
     if (!approved) return;
   }
@@ -511,12 +543,13 @@ function finishSession(completed) {
     elements.missedWords.textContent = 'No target words were missed in this session.';
   }
   setOverlay(null);
+  elements.stages.type.classList.toggle('is-ended', true);
   elements.resultsPanel.hidden = false;
   elements.startPauseButton.hidden = true;
   elements.endSessionButton.hidden = true;
   elements.restartButton.hidden = true;
   announce(completed ? `Session completed at ${Math.round(stats.wpm)} words per minute with ${Math.round(stats.accuracy)} percent accuracy.` : 'Session ended. Results are available below.');
-  elements.resultsPanel.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+  elements.resultsPanel.scrollIntoView({ behavior: reducedMotionQuery.matches ? 'auto' : 'smooth', block: 'start' });
 }
 
 async function restartSession({ confirm = true } = {}) {
@@ -526,6 +559,7 @@ async function restartSession({ confirm = true } = {}) {
       title: 'Restart this passage?',
       message: 'Current timing and keystroke statistics will reset. Mistakes already saved in your library will remain.',
       action: 'Restart',
+      tone: 'primary',
     });
     if (!approved) return;
   }
@@ -565,6 +599,7 @@ async function leaveTyping() {
       title: 'Leave this session?',
       message: 'The active session will end. Any mistake words already recorded will stay saved.',
       action: 'Leave session',
+      tone: 'primary',
     });
     if (!approved) return;
   }
@@ -673,6 +708,7 @@ async function practiceSelectedMistakes() {
       title: 'Start a new mistake session?',
       message: 'The current typing session will end. Its saved mistake words will remain in your library.',
       action: 'Start mistake practice',
+      tone: 'primary',
     });
     if (!approved) return;
   }
@@ -742,6 +778,7 @@ function wireEvents() {
         title: 'Return to import?',
         message: 'The current document and session will be cleared. Saved mistake words will remain.',
         action: 'Return to import',
+      tone: 'primary',
       });
       if (!approved) return;
     }
