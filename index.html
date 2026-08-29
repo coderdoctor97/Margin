@@ -3,21 +3,22 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Turn your own documents into private, focused typing practice.">
-    <meta name="theme-color" content="#f5f1e8">
-    <title>Margin - document typing practice</title>
+    <meta name="description" content="Turn your own documents into private, focused typing practice. Neo-brutalist edition — raw, high-contrast, local-only.">
+    <meta name="theme-color" content="#FFE600">
+    <title>Margin — NEO-BRUTALIST EDITION / document typing practice</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@500;700;800;900&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/styles.css">
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to content</a>
+    <a class="skip-link" href="#main-content">Skip to content — MARGIN v02</a>
 
     <header class="app-header" aria-label="Application header">
-      <button class="wordmark" id="homeButton" type="button" aria-label="Margin home">
+      <button class="wordmark" id="homeButton" type="button" aria-label="Margin home — return to import">
         <span class="wordmark-mark" aria-hidden="true">M</span>
         <span>Margin</span>
+        <span class="wordmark-version" aria-hidden="true">v02 / NB</span>
       </button>
 
       <nav class="stage-nav" aria-label="Practice stages">
@@ -42,14 +43,41 @@
       </div>
     </header>
 
+    <div class="brutalist-ticker" aria-hidden="true">
+      <div class="ticker-track">
+        <span>LOCAL ONLY</span><span class="ticker-dot">●</span>
+        <span>NO UPLOAD</span><span class="ticker-dot">●</span>
+        <span>100% PRIVATE</span><span class="ticker-dot">●</span>
+        <span>VANILLA JS</span><span class="ticker-dot">●</span>
+        <span>NEO-BRUTALIST</span><span class="ticker-dot">●</span>
+        <span>SYSTEM FONTS</span><span class="ticker-dot">●</span>
+        <span>LOCAL ONLY</span><span class="ticker-dot">●</span>
+        <span>NO UPLOAD</span><span class="ticker-dot">●</span>
+        <span>100% PRIVATE</span><span class="ticker-dot">●</span>
+        <span>VANILLA JS</span><span class="ticker-dot">●</span>
+        <span>NEO-BRUTALIST</span><span class="ticker-dot">●</span>
+        <span>SYSTEM FONTS</span><span class="ticker-dot">●</span>
+      </div>
+    </div>
+
     <main id="main-content">
       <section class="stage-panel import-stage is-active" id="importStage" aria-labelledby="importTitle">
         <div class="import-composition">
           <div class="import-copy motion-rise">
-            <p class="kicker">Your words. Your rhythm.</p>
+            <p class="kicker">Your words. Your rhythm. — NB EDITION</p>
             <h1 id="importTitle" class="brand-title">Margin</h1>
+            <div class="brutalist-meta-row" aria-hidden="true">
+              <span>EST 2026</span>
+              <span>PRIVATE BY DESIGN</span>
+              <span>NO CLOUD</span>
+            </div>
             <p class="hero-line">Practice typing with writing you actually want to read.</p>
-            <p class="hero-support">Import a document, choose any passage, and build a private practice routine around the words that slow you down.</p>
+            <p class="hero-support">Import a document, choose any passage, and build a private practice routine around the words that slow you down. Raw paper, hard shadows, zero tracking — the document never leaves this device.</p>
+            <div class="brutalist-callouts" aria-hidden="true">
+              <div class="callout"><strong>01</strong><span>Drop TXT / MD / DOCX — parsed locally</span></div>
+              <div class="callout"><strong>02</strong><span>Select any passage — drag to practice</span></div>
+              <div class="callout"><strong>03</strong><span>Type with hard feedback — ink on paper</span></div>
+            </div>
           </div>
 
           <div class="upload-panel motion-rise motion-delay">
@@ -59,7 +87,7 @@
               <span class="drop-title">Drop a document here</span>
               <span class="drop-divider">or</span>
               <span class="button button-primary">Choose a file</span>
-              <span class="drop-help">TXT, Markdown, or DOCX up to 25 MB</span>
+              <span class="drop-help">TXT, Markdown, or DOCX up to 25 MB — LOCAL ONLY</span>
             </label>
 
             <div class="parse-status" id="parseStatus" hidden aria-live="polite">
@@ -71,28 +99,35 @@
             </div>
 
             <div class="privacy-note">
-                <p><strong>Private by design.</strong> Documents are parsed in this browser and are never uploaded or saved. Only your mistake-word history is stored locally.</p>
+                <p><strong>Private by design.</strong> Documents are parsed in this browser and are never uploaded or saved. Only your mistake-word history is stored locally. Neo-brutalist build: no blur, no glass, hard edges only.</p>
             </div>
           </div>
+        </div>
+
+        <div class="brutalist-footer-strip" aria-hidden="true">
+          <span>MARGIN SYSTEM — VER 02 / NEO-BRUTALIST</span>
+          <span>BUILT WITH VANILLA JS — NO FRAMEWORK</span>
+          <span>© 2026 — PRIVATE TOOL</span>
         </div>
       </section>
 
       <section class="stage-panel read-stage" id="readStage" aria-labelledby="readTitle" hidden>
-        <div class="section-heading">
+        <div class="section-heading motion-rise">
           <div>
-            <p class="kicker">Read and select</p>
+            <p class="kicker">Read and select — 02</p>
             <h1 id="readTitle">Choose your passage</h1>
-            <p>Select text directly in the document, or practice everything.</p>
+            <p>Select text directly in the document, or practice everything. Hard borders, raw selection.</p>
           </div>
           <button class="text-button subtle" id="replaceDocumentButton" type="button">Choose another document</button>
         </div>
 
-        <div class="document-meta" aria-label="Imported document details">
+        <div class="document-meta motion-rise motion-delay" aria-label="Imported document details">
           <span class="file-type" id="fileType">TXT</span>
           <div class="file-identity">
             <strong id="fileName">Document.txt</strong>
             <span id="fileStats">0 words · 0 characters</span>
           </div>
+          <span class="meta-stamp" aria-hidden="true">LOCAL FILE // VERIFIED</span>
         </div>
 
         <article class="document-preview" id="documentPreview" aria-label="Document preview; select text here" tabindex="0"></article>
@@ -111,15 +146,15 @@
       </section>
 
       <section class="stage-panel type-stage" id="typeStage" aria-labelledby="typeTitle" hidden>
-        <div class="typing-topbar">
+        <div class="typing-topbar motion-rise">
           <div>
-            <p class="kicker" id="sessionKicker">Typing session</p>
+            <p class="kicker" id="sessionKicker">Typing session — 03</p>
             <h1 id="typeTitle">Find your rhythm</h1>
           </div>
           <button class="text-button subtle" id="backToDocumentButton" type="button">Back to document</button>
         </div>
 
-        <div class="live-stats" aria-label="Live typing statistics">
+        <div class="live-stats motion-rise motion-delay" aria-label="Live typing statistics">
           <div><span>Progress</span><strong id="progressValue">0%</strong></div>
           <div><span>Time</span><strong id="timeValue">0:00</strong></div>
           <div><span>WPM</span><strong id="wpmValue">0</strong></div>
@@ -131,13 +166,13 @@
           <div class="session-overlay" id="sessionOverlay">
             <span class="eyebrow" id="overlayEyebrow">Ready when you are</span>
             <strong id="overlayTitle">Start with one deliberate keystroke.</strong>
-            <p id="overlayMessage">The timer begins only after you type the first character.</p>
+            <p id="overlayMessage">The timer begins only after you type the first character. Hard ink, acid highlight, no blur.</p>
             <button class="button button-primary" id="overlayActionButton" type="button">Start session</button>
           </div>
           <div class="typing-passage" id="typingPassage" tabindex="0" role="textbox" aria-readonly="true" aria-multiline="true" aria-label="Typing passage. Press Start, then type the highlighted text." aria-describedby="typingHint"></div>
         </div>
 
-        <p class="typing-hint" id="typingHint"><kbd>Backspace</kbd> to revisit a character <span aria-hidden="true">·</span> Paste is disabled during practice</p>
+        <p class="typing-hint" id="typingHint"><kbd>Backspace</kbd> to revisit a character <span aria-hidden="true">·</span> Paste is disabled during practice — raw typing only</p>
         <div class="session-controls" aria-label="Session controls">
           <button class="button button-primary" id="startPauseButton" type="button">Start</button>
           <button class="button button-secondary" id="restartButton" type="button">Restart</button>
@@ -145,9 +180,9 @@
         </div>
 
         <section class="results" id="resultsPanel" aria-labelledby="resultsTitle" hidden>
-          <p class="kicker" id="resultsKicker">Session complete</p>
+          <p class="kicker" id="resultsKicker">Session complete — LOG</p>
           <h2 id="resultsTitle">A little smoother than before.</h2>
-          <p id="resultsLead">Your finished session is summarized below.</p>
+          <p id="resultsLead">Your finished session is summarized below — hard data, no fluff.</p>
           <div class="result-grid">
             <div><strong id="resultWpm">0</strong><span>WPM</span></div>
             <div><strong id="resultAccuracy">100%</strong><span>Accuracy</span></div>
@@ -166,11 +201,11 @@
     <dialog class="library-dialog" id="libraryDialog" aria-labelledby="libraryTitle">
       <div class="dialog-header">
         <div>
-          <p class="kicker">Personal review</p>
+          <p class="kicker">Personal review — ARCHIVE</p>
           <h1 id="libraryTitle">Mistake Library</h1>
-          <p>Words stay on this device until you remove them.</p>
+          <p>Words stay on this device until you remove them. Brutalist archive, no cloud.</p>
         </div>
-        <button class="close-button" id="closeLibraryButton" type="button" aria-label="Close mistake library">Close</button>
+        <button class="close-button" id="closeLibraryButton" type="button" aria-label="Close mistake library">Close [X]</button>
       </div>
 
       <div class="library-toolbar">
@@ -186,7 +221,7 @@
       <div class="library-empty" id="libraryEmpty">
         <span class="empty-rings" aria-hidden="true"></span>
         <h2>No saved words yet</h2>
-        <p>Words you miss during a session will collect here for focused practice.</p>
+        <p>Words you miss during a session will collect here for focused practice. Hard archive.</p>
       </div>
       <div class="mistake-list" id="mistakeList" aria-live="polite"></div>
       <div class="library-footer">
