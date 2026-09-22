@@ -6,9 +6,11 @@
     <meta name="description" content="Turn your own documents into private, focused typing practice.">
     <meta name="theme-color" content="#f5f1e8">
     <title>Margin - document typing practice</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Fonts are self-hosted (src/fonts.css) and served same-origin; the former
+         Google Fonts <link> is gone because fonts.googleapis.com/css2 serves
+         User-Agent-dependent, unversioned CSS that cannot be pinned with
+         Subresource Integrity. See tools/sri-check.mjs. -->
+    <link rel="stylesheet" href="/src/fonts.css">
     <link rel="stylesheet" href="/src/styles.css">
   </head>
   <body>
