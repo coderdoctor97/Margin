@@ -8,9 +8,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:sri": "node tools/sri-check.mjs index.html dist/index.html"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
     "dompurify": "^3.2.6",
     "mammoth": "^1.9.1",
     "marked": "^15.0.12"

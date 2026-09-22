@@ -21,3 +21,22 @@ python3 min_ab.py         # A/B the minimalist pass against its own pre-state (i
 
 Requirements: `npm i -D playwright` in the project root (or a global install), Chromium
 available. Output PNGs land in the directory passed as argv.
+
+## Static checks (no dev server needed)
+
+```bash
+node sri-check.mjs index.html dist/index.html   # or: npm run check:sri
+```
+
+Subresource Integrity gate (frontendchecklist.io/rules/html/subresource-integrity).
+Scans the given HTML files (missing files are skipped, so it works before and after
+`npm run build`) and fails when any cross-origin `<script src>`,
+`<link rel="stylesheet">`, `<link rel="preload" as="script|style">`, or
+`<link rel="modulepreload">` lacks a well-formed `integrity` attribute or a
+`crossorigin` attribute, or points at an endpoint known to serve
+User-Agent-dependent CSS that no hash can pin (fonts.googleapis.com/css*).
+Pass `--verify` to additionally fetch each cross-origin URL, recompute its hash,
+and compare it with the declared value (needs network egress to the CDN).
+Same-origin resources are listed for visibility but need no SRI. The same rule is
+enforced on every `npm test` run by `tests/sri.test.js`, which parses the HTML
+with jsdom instead of a regex.

@@ -21,6 +21,7 @@ npm test             # Run the Vitest suite once
 npm run test:watch   # Run tests in watch mode
 npm run build        # Create a production build in dist/
 npm run preview      # Serve the production build locally
+npm run check:sri    # Verify Subresource Integrity policy on source + build
 ```
 
 ## Supported Documents

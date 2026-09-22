@@ -1,0 +1,28 @@
+/* Self-hosted web fonts (Inter 400/500/600/700 — the weights the UI uses).
+
+   Security note — why this file exists:
+   The page previously loaded fonts from Google Fonts
+   (https://fonts.googleapis.com/css2?family=...). That endpoint cannot be
+   protected with Subresource Integrity: it returns User-Agent–dependent CSS
+   (different @font-face sources per browser) from an unversioned URL, so no
+   stable hash can be pinned. See
+   https://frontendchecklist.io/rules/html/subresource-integrity and
+   https://github.com/google/fonts/issues/473.
+
+   Self-hosting removes the cross-origin dependency entirely: Vite bundles
+   these stylesheets and emits every font file as a same-origin,
+   content-hashed build asset, so no third party can tamper with what the
+   page loads. `tools/sri-check.mjs` and `tests/sri.test.js` enforce that
+   any cross-origin script or stylesheet added in the future carries a
+   verified `integrity` + `crossorigin` pair.
+
+   Rendering is unchanged: same family, weights, `font-display: swap`, and
+   the same subset split (browsers download only the unicode ranges they
+   render). The unused "Instrument Serif" family from the old link was
+   never referenced by any CSS rule and is intentionally not carried over.
+   `font-weight: 800` continues to resolve to the 700 face, exactly as it
+   did under the previous Google Fonts request. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
