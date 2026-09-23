@@ -35,8 +35,10 @@ Scans the given HTML files (missing files are skipped, so it works before and af
 `<link rel="modulepreload">` lacks a well-formed `integrity` attribute or a
 `crossorigin` attribute, or points at an endpoint known to serve
 User-Agent-dependent CSS that no hash can pin (fonts.googleapis.com/css*).
-Pass `--verify` to additionally fetch each cross-origin URL, recompute its hash,
-and compare it with the declared value (needs network egress to the CDN).
+Pass `--verify` to additionally fetch each cross-origin URL, send the page
+origin, recompute the hash, and fail if the response does not allow CORS for the
+page (credentialed loads also require `Access-Control-Allow-Credentials: true`).
 Same-origin resources are listed for visibility but need no SRI. The same rule is
 enforced on every `npm test` run by `tests/sri.test.js`, which parses the HTML
-with jsdom instead of a regex.
+with jsdom instead of a regex and guards the dynamic axe-core loader. That
+optional audit uses a version-pinned jsDelivr URL and native script-element SRI.
