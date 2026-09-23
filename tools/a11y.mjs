@@ -2,6 +2,12 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 
+// axe-core is a test-only CDN dependency. Keep the URL version-pinned and the
+// SHA-384 hash verified against the package bytes (which match jsDelivr's
+// published SHA-256 metadata for this exact file).
+const AXE_CORE_SRC = 'https://cdn.jsdelivr.net/npm/axe-core@4.10.2/axe.min.js';
+const AXE_CORE_INTEGRITY = 'sha384-3NYxCdpLKVHfNs2FHPtg3qqaYuhq85m4mMnlHBlN0JzSpKYKct2PMGYfsKGaKIj4';
+
 fs.writeFileSync('/tmp/nl.txt', 'Alpha bravo charlie delta.\nEcho foxtrot golf hotel.\nIndia juliet kilo lima.');
 const out = process.argv[2] || '/home/user/tools/final';
 fs.mkdirSync(out, { recursive: true });
@@ -12,6 +18,18 @@ const page = await ctx.newPage();
 page.on('console', m => m.type() === 'error' && errors.push('console: ' + m.text()));
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 const row = (k, v) => console.log(`  ${String(k).padEnd(40)} ${v}`);
+
+async function loadAxeCore(page) {
+  await page.evaluate(({ src, integrity }) => new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.setAttribute('crossorigin', 'anonymous');
+    script.setAttribute('integrity', integrity);
+    script.src = src;
+    script.addEventListener('load', resolve, { once: true });
+    script.addEventListener('error', () => reject(new Error('axe-core failed its SRI/CORS load')), { once: true });
+    document.head.append(script);
+  }), { src: AXE_CORE_SRC, integrity: AXE_CORE_INTEGRITY });
+}
 
 await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
 await page.setInputFiles('#fileInput', '/tmp/nl.txt');
@@ -81,10 +99,10 @@ await dlg.waitForTimeout(250);
 console.log('  library dialog open                   ', await dlg.evaluate(() => document.querySelector('#libraryDialog').open));
 await dlg.screenshot({ path: `${out}/library-empty.png` });
 
-// axe-core if we can pull it (network), else note it
+// axe-core remains optional when network access is unavailable, but the browser
+// verifies its pinned bytes before execution through native Subresource Integrity.
 try {
-  const src = await (await fetch('https://cdn.jsdelivr.net/npm/axe-core@4.10.2/axe.min.js')).text();
-  await page.addScriptTag({ content: src });
+  await loadAxeCore(page);
   const res = await page.evaluate(async () => await window.axe.run(document, { resultTypes: ['violations'] }));
   console.log('\n[AXE-CORE]');
   if (!res.violations.length) console.log('  0 violations');

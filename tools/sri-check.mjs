@@ -44,7 +44,7 @@ const KNOWN_UNPINNABLE = [
   },
 ];
 
-const VALID_INTEGRITY_TOKEN = /^sha(256|384|512)-[A-Za-z0-9+/=]+$/;
+const VALID_INTEGRITY_TOKEN = /^(?:sha256-[A-Za-z0-9+/]{43}=?|sha384-[A-Za-z0-9+/]{64}|sha512-[A-Za-z0-9+/]{86}(?:==)?)$/;
 
 const argv = process.argv.slice(2);
 let verify = false;
@@ -97,9 +97,14 @@ function classification(rawUrl) {
 async function verifyHash(resource) {
   const notes = [];
   const errors = [];
+  const requestOrigin = new URL(origin).origin;
   let response;
   try {
-    response = await fetch(resource.url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    response = await fetch(new URL(resource.url, origin), {
+      redirect: 'follow',
+      headers: { origin: requestOrigin },
+      signal: AbortSignal.timeout(15000),
+    });
   } catch (error) {
     const detail = `fetch failed: ${error.cause?.code || error.message} (no network egress to this host?)`;
     return { ok: false, notes: [detail], errors: [`could not fetch resource to verify its hash — ${detail}`] };
@@ -109,8 +114,20 @@ async function verifyHash(resource) {
     return { ok: false, notes: [detail], errors: [`could not fetch resource to verify its hash — ${detail}`] };
   }
 
-  if (!response.headers.get('access-control-allow-origin')) {
-    notes.push('WARNING: no Access-Control-Allow-Origin response header — the browser will block this SRI load');
+  const allowedOrigin = response.headers.get('access-control-allow-origin')?.trim();
+  const credentialMode = resource.crossorigin.toLowerCase();
+  const credentialHeader = response.headers.get('access-control-allow-credentials')?.toLowerCase();
+  const corsAllowed = credentialMode === 'use-credentials'
+    ? allowedOrigin === requestOrigin && credentialHeader === 'true'
+    : allowedOrigin === '*' || allowedOrigin === requestOrigin;
+  if (corsAllowed) {
+    notes.push(`CORS OK (${allowedOrigin}${credentialMode === 'use-credentials' ? ', credentials allowed' : ''})`);
+  } else {
+    const detail = credentialMode === 'use-credentials'
+      ? `CORS failure: credentials require Access-Control-Allow-Origin: ${requestOrigin} and Access-Control-Allow-Credentials: true (received ${allowedOrigin || 'no allow-origin header'}${credentialHeader ? `; credentials=${credentialHeader}` : ''})`
+      : `CORS failure: response must include Access-Control-Allow-Origin: * or ${requestOrigin} (received ${allowedOrigin || 'no header'})`;
+    notes.push(detail);
+    errors.push(detail);
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -162,6 +179,9 @@ for (const file of files) {
         }
       }
       if (!resource.crossorigin) problems.push('missing crossorigin attribute (SRI requires CORS-mode loading)');
+      else if (!['anonymous', 'use-credentials'].includes(resource.crossorigin.toLowerCase())) {
+        problems.push(`invalid crossorigin mode "${resource.crossorigin}" (use anonymous or use-credentials)`);
+      }
 
       if (verify && problems.length === 0) {
         const result = await verifyHash(resource);
