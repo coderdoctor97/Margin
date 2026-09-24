@@ -107,15 +107,13 @@
     cursor: pointer;
     width: max-content;
   }
+  /* The real artwork replaces the CSS tile: the plate is drawn in the PNG, so the
+     element only has to size it. 40px box -> 30x34 plate, the previous tile's size. */
   .wordmark-mark {
-    width: 30px;
-    height: 34px;
-    display: grid;
-    place-items: center;
-    color: var(--paper);
-    background: var(--forest);
-    border-radius: 15px 15px 5px 5px;
-    font-size: 1rem;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    display: block;
   }
   .stage-nav {
     display: flex;

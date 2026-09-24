@@ -6,6 +6,19 @@
     <meta name="description" content="Turn your own documents into private, focused typing practice.">
     <meta name="theme-color" content="#f5f1e8">
     <title>Margin - document typing practice</title>
+    <!-- Brand mark. public/assets/audio/icon.png is the master artwork and the whole set
+         is generated from it by `node tools/make-icons.mjs` (see tools/README.md).
+         favicon-*.png keep the letter M as a transparent knockout so the plate sits on
+         the tab surface; apple-touch-icon.png and the maskable manifest entry are
+         flattened onto the brand green because those hosts fill transparency with
+         black, which would swallow the knockout. -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
     <!-- Fonts are self-hosted (src/fonts.css) and served same-origin; the former
          Google Fonts <link> is gone because fonts.googleapis.com/css2 serves
          User-Agent-dependent, unversioned CSS that cannot be pinned with
@@ -18,7 +31,10 @@
 
     <header class="app-header" aria-label="Application header">
       <button class="wordmark" id="homeButton" type="button" aria-label="Margin home">
-        <span class="wordmark-mark" aria-hidden="true">M</span>
+        <!-- The plate occupies 76.8% x 83.6% of the square artwork, so a 40px box
+             renders the mark at the 30x34 the previous CSS tile used. alt="" keeps it
+             out of the accessibility tree: the button already carries its own label. -->
+        <img class="wordmark-mark" src="/icon-192.png" alt="" width="40" height="40">
         <span>Margin</span>
       </button>
 
