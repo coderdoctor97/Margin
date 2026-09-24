@@ -72,6 +72,10 @@ Typing audio is enabled by default at 28% volume and can be changed in the heade
 
 Asset details and licensing are in [`public/assets/audio/README.md`](public/assets/audio/README.md). The click is an original CC0 waveform created for this project; no external audio is hotlinked.
 
+## Brand Mark
+
+The header wordmark and the browser tab icon both come from the artwork in `public/assets/audio/icon.png`: a forest-green plate (brand green `#0a4531`) with the letter M knocked out, so the mark takes the colour of whatever surface it sits on. The favicon and app-icon set in `public/` is generated from that master by `npm run icons` (`tools/make-icons.mjs`); run it after the master changes and commit the result. `tools/README.md` explains why the browser icons keep the knockout transparent while the iOS and maskable icons are flattened onto the brand green.
+
 ## Architecture
 
 - `src/parsers/document-parser.js`: validation, encoding, TXT/Markdown/DOCX extraction
